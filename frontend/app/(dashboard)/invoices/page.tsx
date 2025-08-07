@@ -60,6 +60,7 @@ import { pluralize } from "@/utils/pluralize";
 import { request } from "@/utils/request";
 import { company_invoices_path, export_company_invoices_path } from "@/utils/routes";
 import { formatDate } from "@/utils/time";
+import { useIsMobile } from "@/utils/use-mobile";
 import QuantityInput from "./QuantityInput";
 import { useCanSubmitInvoices } from ".";
 
@@ -76,6 +77,7 @@ const statusNames = {
 type Invoice = RouterOutput["invoices"]["list"][number];
 
 export default function InvoicesPage() {
+  const isMobile = useIsMobile();
   const user = useCurrentUser();
   const company = useCurrentCompany();
   const [openModal, setOpenModal] = useState<"approve" | "reject" | "delete" | null>(null);
@@ -309,12 +311,20 @@ export default function InvoicesPage() {
         title="Invoices"
         headerActions={
           user.roles.worker ? (
-            <Button asChild variant="outline" size="small" disabled={!canSubmitInvoices}>
-              <Link href="/invoices/new" inert={!canSubmitInvoices}>
-                <Plus className="size-4" />
-                New invoice
-              </Link>
-            </Button>
+            !isMobile ? (
+              <Button asChild variant="outline" size="small" disabled={!canSubmitInvoices}>
+                <Link href="/invoices/new" inert={!canSubmitInvoices}>
+                  <Plus className="size-4" />
+                  New invoice
+                </Link>
+              </Button>
+            ) : (
+              <Button variant="floating-action" {...(!canSubmitInvoices ? { disabled: true } : { asChild: true })}>
+                <Link href="/invoices/new" inert={!canSubmitInvoices}>
+                  <Plus />
+                </Link>
+              </Button>
+            )
           ) : null
         }
       />
