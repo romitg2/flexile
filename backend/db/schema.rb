@@ -217,10 +217,6 @@ ActiveRecord::Schema[8.0].define(version: 2025_08_12_170245) do
     t.datetime "created_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
     t.datetime "updated_at", null: false
     t.string "external_id", null: false
-    t.string "period"
-    t.date "period_started_on"
-    t.boolean "show_revenue", default: false, null: false
-    t.boolean "show_net_income", default: false, null: false
     t.index ["company_id"], name: "index_company_updates_on_company_id"
     t.index ["external_id"], name: "index_company_updates_on_external_id", unique: true
   end
