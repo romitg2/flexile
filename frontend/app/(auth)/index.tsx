@@ -13,6 +13,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
+import { SignInMethod } from "@/db/enums";
+import googleLogoLight from "@/images/google-light.svg";
 import logo from "@/public/logo-icon.svg";
 import { request } from "@/utils/request";
 
@@ -20,6 +22,12 @@ const emailSchema = z.object({ email: z.string().email() });
 const otpSchema = z.object({
   otp: z.string().length(6, "Please enter the 6-digit verification code"),
 });
+
+const OAUTH_ERROR_MESSAGES: Record<string, string> = {
+  Callback: "Access denied or an unexpected error occurred.",
+  AccessDenied: "You do not have permission to perform this action.",
+  Verification: "Invalid or expired verification link.",
+};
 
 export function AuthPage({
   title,
@@ -38,6 +46,7 @@ export function AuthPage({
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const oauthError = searchParams.get("error");
   const [redirectInProgress, setRedirectInProgress] = useState(false);
   const sendOtp = useMutation({
     mutationFn: async (values: { email: string }) => {
@@ -83,6 +92,7 @@ export function AuthPage({
   const submitEmailForm = emailForm.handleSubmit(async (values) => {
     try {
       await sendOtp.mutateAsync(values);
+      localStorage.setItem("last_sign_in_method", SignInMethod.Email);
     } catch (error) {
       emailForm.setError("email", {
         message: error instanceof Error ? error.message : "Failed to send verification code",
@@ -100,6 +110,16 @@ export function AuthPage({
       otpForm.setError("otp", { message: error instanceof Error ? error.message : "Failed to verify OTP" });
     }
   });
+
+  const providerSignIn = (provider: SignInMethod) => {
+    localStorage.setItem("last_sign_in_method", provider);
+    const redirectUrlParam = searchParams.get("redirect_url");
+    const redirectUrl =
+      redirectUrlParam && redirectUrlParam.startsWith("/") && !redirectUrlParam.startsWith("//")
+        ? redirectUrlParam
+        : "/dashboard";
+    void signIn(provider, { callbackUrl: redirectUrl });
+  };
 
   return (
     <div className="flex items-center justify-center">
@@ -176,6 +196,29 @@ export function AuthPage({
           {!sendOtp.isSuccess ? (
             <Form {...emailForm}>
               <form onSubmit={(e) => void submitEmailForm(e)} className="space-y-4">
+                <div className="mb-4 flex flex-col items-center">
+                  {oauthError ? (
+                    <p className="text-destructive mb-2">
+                      {Object.prototype.hasOwnProperty.call(OAUTH_ERROR_MESSAGES, oauthError)
+                        ? OAUTH_ERROR_MESSAGES[oauthError]
+                        : oauthError}
+                    </p>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex h-12 w-full items-center justify-center gap-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-500"
+                    onClick={() => providerSignIn(SignInMethod.Google)}
+                  >
+                    <Image src={googleLogoLight} alt="Google" width={20} height={20} />
+                    {sendOtpText} with Google
+                  </Button>
+                  <div className="my-3 flex w-full items-center gap-2">
+                    <div className="bg-muted h-px flex-1" />
+                    <span className="text-muted-foreground text-sm">or</span>
+                    <div className="bg-muted h-px flex-1" />
+                  </div>
+                </div>
                 <FormField
                   control={emailForm.control}
                   name="email"
@@ -197,7 +240,12 @@ export function AuthPage({
                     </FormItem>
                   )}
                 />
-                <MutationStatusButton mutation={sendOtp} type="submit" className="w-full" loadingText="Sending...">
+                <MutationStatusButton
+                  mutation={sendOtp}
+                  type="submit"
+                  className="w-full bg-white text-gray-900 hover:bg-gray-100"
+                  loadingText="Sending..."
+                >
                   {sendOtpText}
                 </MutationStatusButton>
 
