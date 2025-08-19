@@ -60,7 +60,7 @@ scope path: :internal, module: :internal do
         post :remove_role
       end
     end
-    resources :equity_grant_exercises, only: :create do
+    resources :equity_grant_exercises, only: [:new, :create] do
       member do
         post :resend
       end
