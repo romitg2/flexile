@@ -97,9 +97,8 @@ const StripeMicrodepositVerification = () => {
             </p>
           ) : (
             <p>
-              Check your {microdepositVerificationDetails.bank_account_number || ""} bank account for{" "}
-              <strong>two deposits</strong> from Stripe on {arrivalDate}. The transactions' description will read
-              "ACCTVERIFY".
+              Check your {microdepositVerificationDetails.bank_account_number || ""} bank account for two deposits from
+              Stripe on {arrivalDate}. The transactions' description will read "ACCTVERIFY".
             </p>
           )}
 
