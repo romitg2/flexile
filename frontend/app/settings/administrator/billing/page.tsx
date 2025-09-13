@@ -179,7 +179,7 @@ export default function Billing() {
       ) : stripeDataError ? (
         <Placeholder icon={CircleDollarSign}>
           <p>Unable to load payment method information.</p>
-          <Button variant="outline" onClick={() => refetchStripeData()}>
+          <Button variant="outline" onClick={() => void refetchStripeData()}>
             <RefreshCw className="size-4" />
             Try again
           </Button>
@@ -187,7 +187,7 @@ export default function Billing() {
       ) : (
         <Placeholder icon={CircleDollarSign}>
           <p>No payment method found.</p>
-          <Button variant="outline" onClick={() => refetchStripeData()}>
+          <Button variant="outline" onClick={() => void refetchStripeData()}>
             <RefreshCw className="size-4" />
             Try again
           </Button>
