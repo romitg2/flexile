@@ -8,7 +8,7 @@ class EquityExercisingService
     @equity_grants = exercise.equity_grants
   end
 
-  def self.create_request(equity_grants_params:, submission_id:, company_investor:, company_worker:)
+  def self.create_request(equity_grants_params:, company_investor:)
     company = company_investor.company
     number_of_options_by_equity_grant = equity_grants_params.to_h { [_1[:id], _1[:number_of_options]] }
     equity_grant_ids = number_of_options_by_equity_grant.keys
@@ -56,9 +56,14 @@ class EquityExercisingService
           exercise_price_usd: equity_grant.exercise_price_usd
         )
       end
-      document = Document.new(company:, name: "Notice of Exercise", document_type: :exercise_notice, year: current_time.year,
-                              json_data: { equity_grant_exercise_id: exercise.id }, docuseal_submission_id: submission_id)
+      pdf = CreatePdf.new(body_html: ActionController::Base.helpers.sanitize(company.exercise_notice)).perform
+      document = company.documents.exercise_notice.build(name: "Notice of Exercise", year: current_time.year, json_data: { equity_grant_exercise_id: exercise.id })
       document.signatures.build(user: company_investor.user, title: "Signer", signed_at: current_time)
+      document.attachments.attach(
+        io: StringIO.new(pdf),
+        filename: "Exercise notice.pdf",
+        content_type: "application/pdf",
+      )
       document.save!
       CompanyInvestorMailer.stock_exercise_payment_instructions(company_investor.id, exercise_id: exercise.id).deliver_later
       company.company_administrators.ids.each do
@@ -125,13 +130,10 @@ class EquityExercisingService
     end
 
     def next_share_name
-      preceding_share = company.share_holdings.order(id: :desc).first
-      return "#{company.name.first(1).upcase}-1" if preceding_share.nil?
-
-      preceding_share_digits = preceding_share.name.scan(/\d+\z/).last
-      preceding_share_number = preceding_share_digits.to_i
-
-      next_share_number = preceding_share_number + 1
-      preceding_share.name.reverse.sub(preceding_share_digits.reverse, next_share_number.to_s.reverse).reverse
+      EquityNamingService.next_name(
+        company: company,
+        collection: company.share_holdings,
+        prefix_length: 1
+      )
     end
 end

@@ -12,8 +12,6 @@ Dir[Rails.root.join("spec", "support", "**", "*.rb")].sort.each { |f| require f 
 
 BUILDING_ON_CI = !ENV["CI"].nil?
 
-KnapsackPro::Adapters::RSpecAdapter.bind
-
 SuperDiff.configure { |config| config.actual_color = :green }
 
 # Checks for pending migrations and applies them before tests are run.
@@ -31,7 +29,6 @@ def configure_vcr
     config.hook_into :webmock
     config.ignore_localhost = true
     config.ignore_hosts "chromedriver.storage.googleapis.com"
-    config.ignore_hosts "api.knapsackpro.com"
     config.configure_rspec_metadata!
     config.debug_logger = $stdout if ENV["VCR_DEBUG"]
     config.default_cassette_options[:record] = BUILDING_ON_CI ? :none : :once
@@ -46,14 +43,13 @@ def configure_vcr
     config.default_cassette_options[:match_requests_on] = %i[method uri wise_account_requirements]
     config.filter_sensitive_data("<GUMROAD_BANK_ROUTING_NUMBER>") { GlobalConfig.dig("wise_gumroad_account", "abartn") }
     config.filter_sensitive_data("<GUMROAD_BANK_ACCOUNT_NUMBER>") { GlobalConfig.dig("wise_gumroad_account", "account_number") }
-    config.filter_sensitive_data("<QUICKBOOKS_BASIC_AUTH_STRING>") { Base64.strict_encode64("#{GlobalConfig.get('QUICKBOOKS_CLIENT_ID')}:#{GlobalConfig.get('QUICKBOOKS_CLIENT_SECRET')}") }
     config.filter_sensitive_data("<WISE_PROFILE_ID>") { GlobalConfig.get("WISE_PROFILE_ID") }
   end
 end
 
 configure_vcr
 
-WebMock.disable_net_connect!(net_http_connect_on_start: true, allow: ["api.knapsackpro.com"])
+WebMock.disable_net_connect!(net_http_connect_on_start: true)
 
 RSpec.configure do |config|
   config.expect_with :rspec do |expectations|

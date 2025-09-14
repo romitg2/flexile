@@ -5,7 +5,6 @@ import { CalendarDate, parseDate } from "@internationalized/date";
 import { useMutation, type UseMutationResult, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { iso31662 } from "iso-3166";
 import { AlertTriangle, ArrowUpRightFromSquare, Eye, EyeOff, Info } from "lucide-react";
-import { useRouter } from "next/navigation";
 import React, { useEffect, useId, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -24,7 +23,6 @@ import { Label } from "@/components/ui/label";
 import { BusinessType, TaxClassification } from "@/db/enums";
 import { useCurrentUser } from "@/global";
 import { countries } from "@/models/constants";
-import { trpc } from "@/trpc/client";
 import { getTinName } from "@/utils/legal";
 import { request } from "@/utils/request";
 import { settings_tax_path } from "@/utils/routes";
@@ -71,6 +69,10 @@ const getIsForeign = (values: z.infer<typeof formValuesSchema>) =>
   values.citizenship_country_code !== "US" && values.country_code !== "US";
 
 const formSchema = formValuesSchema
+  .refine((data) => data.citizenship_country_code.length > 0, {
+    path: ["citizenship_country_code"],
+    message: "Please select your country of citizenship.",
+  })
   .refine((data) => !data.business_entity || data.business_name, {
     path: ["business_name"],
     message: "Please add your business legal name.",
@@ -86,9 +88,6 @@ const formSchema = formValuesSchema
 
 export default function TaxPage() {
   const user = useCurrentUser();
-  const router = useRouter();
-  const trpcUtils = trpc.useUtils();
-  const updateTaxSettings = trpc.users.updateTaxSettings.useMutation();
   const queryClient = useQueryClient();
 
   const { data } = useSuspenseQuery({
@@ -154,19 +153,21 @@ export default function TaxPage() {
   const saveMutation = useMutation({
     mutationFn: async (signature: string) => {
       const formValues = form.getValues();
-      const transformedData = {
-        ...formValues,
-        birth_date: formValues.birth_date ? formValues.birth_date.toString() : null,
-        signature,
-      };
-      const data = await updateTaxSettings.mutateAsync({ data: transformedData });
+      await request({
+        accept: "json",
+        method: "PATCH",
+        url: settings_tax_path(),
+        jsonData: {
+          ...formValues,
+          birth_date: formValues.birth_date?.toString(),
+          signature,
+        },
+        assertOk: true,
+      });
 
       setIsTaxInfoConfirmed(true);
       if (form.getFieldState("tax_id").isDirty) setTaxIdStatus(null);
-      if (data.documentId) {
-        await trpcUtils.documents.list.invalidate();
-        router.push(`/documents?sign=${data.documentId}`);
-      } else setShowCertificationModal(false);
+      setShowCertificationModal(false);
       await queryClient.invalidateQueries({ queryKey: ["currentUser"] });
     },
   });
@@ -356,7 +357,7 @@ export default function TaxPage() {
               )}
             />
 
-            <div className="grid items-start gap-3 md:grid-cols-2">
+            <div className="grid items-start gap-3 lg:grid-cols-2">
               <FormField
                 control={form.control}
                 name="tax_id"
@@ -370,9 +371,21 @@ export default function TaxPage() {
                       </FormLabel>
                       {!isForeign && field.value && !form.getFieldState("tax_id").isDirty ? (
                         <>
-                          {taxIdStatus === "verified" && <Status variant="success">VERIFIED</Status>}
-                          {taxIdStatus === "invalid" && <Status variant="critical">INVALID</Status>}
-                          {!taxIdStatus && <Status variant="primary">VERIFYING</Status>}
+                          {taxIdStatus === "verified" && (
+                            <Status variant="success" className="text-xs">
+                              VERIFIED
+                            </Status>
+                          )}
+                          {taxIdStatus === "invalid" && (
+                            <Status variant="critical" className="text-xs">
+                              INVALID
+                            </Status>
+                          )}
+                          {!taxIdStatus && (
+                            <Status variant="primary" className="text-xs">
+                              VERIFYING
+                            </Status>
+                          )}
                         </>
                       ) : null}
                     </div>
@@ -391,7 +404,7 @@ export default function TaxPage() {
                       <Button
                         type="button"
                         variant="outline"
-                        className="rounded-l-none"
+                        className="focus-visible:ring-ring/15 rounded-l-none outline-none focus-visible:border-gray-300 focus-visible:ring-[3px]"
                         onPointerDown={() => setMaskTaxId(false)}
                         onPointerUp={() => setMaskTaxId(true)}
                         onPointerLeave={() => setMaskTaxId(true)}
@@ -491,13 +504,14 @@ export default function TaxPage() {
           <div className="flex flex-wrap gap-8">
             <MutationStatusButton
               type="submit"
+              size="small"
               disabled={!!isTaxInfoConfirmed && !form.formState.isDirty}
               mutation={saveMutation}
             >
               Save changes
             </MutationStatusButton>
 
-            {user.roles.worker ? (
+            {user.roles.worker && data.contractor_for_companies.length > 0 ? (
               <div className="flex items-center text-sm">
                 Changes to your tax information may trigger{" "}
                 {data.contractor_for_companies.length === 1 ? "a new contract" : "new contracts"} with{" "}

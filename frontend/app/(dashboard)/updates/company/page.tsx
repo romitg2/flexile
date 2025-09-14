@@ -1,8 +1,7 @@
 "use client";
-import { CircleCheck, Trash } from "lucide-react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { CircleCheck, Plus, Trash2 } from "lucide-react";
 import React, { useMemo, useState } from "react";
+import CompanyUpdateModal from "@/app/(dashboard)/updates/company/CompanyUpdateModal";
 import ViewUpdateDialog from "@/app/(dashboard)/updates/company/ViewUpdateDialog";
 import { DashboardHeader } from "@/components/DashboardHeader";
 import DataTable, { createColumnHelper, useTable } from "@/components/DataTable";
@@ -15,6 +14,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { useCurrentCompany, useCurrentUser } from "@/global";
 import { trpc } from "@/trpc/client";
 import { formatDate } from "@/utils/time";
+import { useIsMobile } from "@/utils/use-mobile";
 
 const useData = () => {
   const company = useCurrentCompany();
@@ -22,9 +22,29 @@ const useData = () => {
   return { updates: data.updates, isLoading };
 };
 
+type UpdateListItem = ReturnType<typeof useData>["updates"][number];
+
 export default function CompanyUpdates() {
+  const isMobile = useIsMobile();
   const user = useCurrentUser();
   const { updates, isLoading } = useData();
+  const [showModal, setShowModal] = useState(false);
+  const [editingUpdateId, setEditingUpdateId] = useState<string | undefined>(undefined);
+
+  const handleNewUpdate = () => {
+    setEditingUpdateId(undefined);
+    setShowModal(true);
+  };
+
+  const handleEditUpdate = (update: UpdateListItem) => {
+    setEditingUpdateId(update.id);
+    setShowModal(true);
+  };
+
+  const handleCloseModal = () => {
+    setShowModal(false);
+    setEditingUpdateId(undefined);
+  };
 
   return (
     <>
@@ -32,9 +52,15 @@ export default function CompanyUpdates() {
         title="Updates"
         headerActions={
           user.roles.administrator ? (
-            <Button asChild>
-              <Link href="/updates/company/new">New update</Link>
-            </Button>
+            isMobile ? (
+              <Button variant="floating-action" onClick={handleNewUpdate}>
+                <Plus />
+              </Button>
+            ) : (
+              <Button size="small" onClick={handleNewUpdate}>
+                New update
+              </Button>
+            )
           ) : null
         }
       />
@@ -43,22 +69,30 @@ export default function CompanyUpdates() {
         <TableSkeleton columns={user.roles.administrator ? 4 : 3} />
       ) : updates.length ? (
         user.roles.administrator ? (
-          <AdminList />
+          <AdminList onEditUpdate={handleEditUpdate} />
         ) : (
           <ViewList />
         )
       ) : (
-        <Placeholder icon={CircleCheck}>No updates to display.</Placeholder>
+        <div className="mx-4">
+          <Placeholder icon={CircleCheck}>No updates to display.</Placeholder>
+        </div>
       )}
+
+      <CompanyUpdateModal
+        open={showModal}
+        onClose={handleCloseModal}
+        {...(editingUpdateId && { updateId: editingUpdateId })}
+      />
     </>
   );
 }
 
-const AdminList = () => {
+const AdminList = ({ onEditUpdate }: { onEditUpdate: (update: UpdateListItem) => void }) => {
   const { updates } = useData();
   const company = useCurrentCompany();
-  const router = useRouter();
   const trpcUtils = trpc.useUtils();
+  const isMobile = useIsMobile();
 
   const [deletingUpdate, setDeletingUpdate] = useState<string | null>(null);
 
@@ -70,17 +104,17 @@ const AdminList = () => {
   });
 
   const columnHelper = createColumnHelper<(typeof updates)[number]>();
-  const columns = useMemo(
+  const desktopColumns = useMemo(
     () => [
-      columnHelper.simple("sentAt", "Sent on", (v) => (v ? formatDate(v) : "-")),
       columnHelper.accessor("title", {
         header: "Title",
         cell: (info) => (
-          <Link href={`/updates/company/${info.row.original.id}/edit`} className="no-underline">
+          <button onClick={() => onEditUpdate(info.row.original)} className="text-left no-underline hover:underline">
             {info.getValue()}
-          </Link>
+          </button>
         ),
       }),
+      columnHelper.simple("sentAt", "Sent On", (v) => (v ? formatDate(v) : "-")),
       columnHelper.accessor((row) => (row.sentAt ? "Sent" : "Draft"), {
         header: "Status",
         cell: (info) => <Status variant={info.getValue() === "Sent" ? "success" : undefined}>{info.getValue()}</Status>,
@@ -91,22 +125,64 @@ const AdminList = () => {
           <Button
             aria-label="Remove"
             variant="outline"
-            onClick={() => setDeletingUpdate(info.row.original.id)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setDeletingUpdate(info.row.original.id);
+            }}
             className="inline-flex cursor-pointer items-center border-none bg-transparent text-inherit underline hover:text-blue-600"
           >
-            <Trash className="size-4" />
+            <Trash2 className="size-4" />
           </Button>
         ),
       }),
     ],
-    [],
+    [onEditUpdate],
   );
 
+  const mobileColumns = useMemo(
+    () => [
+      columnHelper.display({
+        id: "titleSummary",
+        cell: (info) => {
+          const update = info.row.original;
+          return (
+            <div className="flex w-3xs flex-col gap-2">
+              <div>
+                <div className="truncate text-base font-medium">{update.title}</div>
+                <div className="truncate font-normal text-gray-600">{update.summary}</div>
+              </div>
+            </div>
+          );
+        },
+        meta: {
+          cellClassName: "w-full",
+        },
+      }),
+      columnHelper.display({
+        id: "statusSentOn",
+        cell: (info) => {
+          const update = info.row.original;
+
+          return (
+            <div className="flex h-full flex-col items-end justify-between">
+              <div className="flex h-5 w-4 items-center justify-center">
+                <Status variant={update.sentAt ? "success" : undefined} />
+              </div>
+              <div className="text-gray-600">{update.sentAt ? formatDate(update.sentAt) : "-"}</div>
+            </div>
+          );
+        },
+      }),
+    ],
+    [onEditUpdate],
+  );
+
+  const columns = isMobile ? mobileColumns : desktopColumns;
   const table = useTable({ columns, data: updates });
 
   return (
     <>
-      <DataTable table={table} onRowClicked={(row) => router.push(`/updates/company/${row.id}/edit`)} />
+      <DataTable table={table} onRowClicked={(row) => onEditUpdate(row)} />
       <Dialog open={!!deletingUpdate} onOpenChange={() => setDeletingUpdate(null)}>
         <DialogContent>
           <DialogHeader>
@@ -118,11 +194,12 @@ const AdminList = () => {
           </p>
           <DialogFooter>
             <div className="grid auto-cols-fr grid-flow-col items-center gap-3">
-              <Button variant="outline" onClick={() => setDeletingUpdate(null)}>
+              <Button variant="outline" size="small" onClick={() => setDeletingUpdate(null)}>
                 No, cancel
               </Button>
               <MutationButton
                 mutation={deleteMutation}
+                size="small"
                 param={{ companyId: company.id, id: deletingUpdate ?? "" }}
                 loadingText="Deleting..."
               >
@@ -137,10 +214,11 @@ const AdminList = () => {
 };
 
 const ViewList = () => {
+  const isMobile = useIsMobile();
   const { updates } = useData();
   const [selectedUpdateId, setSelectedUpdateId] = useState<string | null>(null);
   const columnHelper = createColumnHelper<(typeof updates)[number]>();
-  const columns = useMemo(
+  const desktopColumns = useMemo(
     () => [
       columnHelper.simple("title", "Title"),
       columnHelper.accessor("summary", {
@@ -151,6 +229,39 @@ const ViewList = () => {
     ],
     [],
   );
+
+  const mobileColumns = useMemo(
+    () => [
+      columnHelper.display({
+        id: "update",
+        cell: (info) => {
+          const update = info.row.original;
+          return (
+            <div className="flex flex-col gap-1">
+              <div className="flex">
+                <div className="w-3xs truncate text-base font-medium">{update.title}</div>
+                <div className="flex-1 text-right font-[350] text-gray-600">
+                  {update.sentAt ? formatDate(update.sentAt) : "-"}
+                </div>
+              </div>
+              <div
+                className="truncate text-base leading-5 font-[350] text-gray-600"
+                style={{ width: "calc(100vw - 40px)" }}
+              >
+                {update.summary}
+              </div>
+            </div>
+          );
+        },
+        meta: {
+          cellClassName: "w-full",
+        },
+      }),
+    ],
+    [],
+  );
+
+  const columns = isMobile ? mobileColumns : desktopColumns;
   const table = useTable({ columns, data: updates });
   const handleRowClick = (row: { id: string }) => setSelectedUpdateId(row.id);
 

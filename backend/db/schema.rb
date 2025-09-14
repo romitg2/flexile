@@ -10,17 +10,15 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_07_31_200856) do
+ActiveRecord::Schema[8.0].define(version: 2025_08_22_115115) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
   # Custom types defined in this database.
   # Note that some types may not work with other database engines. Be careful if changing database.
-  create_enum "equity_grant_transactions_transaction_type", ["scheduled_vesting", "vesting_post_invoice_payment", "exercise", "cancellation", "manual_adjustment", "end_of_period_forfeiture"]
   create_enum "equity_grants_issue_date_relationship", ["employee", "consultant", "investor", "founder", "officer", "executive", "board_member"]
   create_enum "equity_grants_option_grant_type", ["iso", "nso"]
   create_enum "equity_grants_vesting_trigger", ["scheduled", "invoice_paid"]
-  create_enum "integration_status", ["initialized", "active", "out_of_sync", "deleted"]
   create_enum "invoices_invoice_type", ["services", "other"]
 
   create_table "active_storage_attachments", force: :cascade do |t|
@@ -99,16 +97,17 @@ ActiveRecord::Schema[8.0].define(version: 2025_07_31_200856) do
     t.string "registration_state"
     t.string "external_id", null: false
     t.string "country_code"
-    t.boolean "is_gumroad", default: false, null: false
     t.boolean "dividends_allowed", default: false, null: false
     t.boolean "is_trusted", default: false, null: false
     t.boolean "show_analytics_to_contractors", default: false, null: false
     t.string "default_currency", default: "usd", null: false
-    t.boolean "lawyers_enabled", default: false, null: false
     t.decimal "conversion_share_price_usd"
     t.jsonb "json_data", default: {"flags" => []}, null: false
     t.boolean "equity_enabled", default: false, null: false
+    t.text "exercise_notice"
+    t.string "invite_link"
     t.index ["external_id"], name: "index_companies_on_external_id", unique: true
+    t.index ["invite_link"], name: "index_companies_on_invite_link", unique: true
   end
 
   create_table "company_administrators", force: :cascade do |t|
@@ -177,18 +176,6 @@ ActiveRecord::Schema[8.0].define(version: 2025_07_31_200856) do
     t.index ["user_id"], name: "index_company_investors_on_user_id"
   end
 
-  create_table "company_invite_links", force: :cascade do |t|
-    t.bigint "company_id", null: false
-    t.bigint "document_template_id"
-    t.string "token", null: false
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
-    t.index ["company_id", "document_template_id"], name: "idx_on_company_id_document_template_id_57bbad7c26", unique: true
-    t.index ["company_id"], name: "index_company_invite_links_on_company_id"
-    t.index ["document_template_id"], name: "index_company_invite_links_on_document_template_id"
-    t.index ["token"], name: "index_company_invite_links_on_token", unique: true
-  end
-
   create_table "company_lawyers", force: :cascade do |t|
     t.bigint "user_id", null: false
     t.bigint "company_id", null: false
@@ -199,18 +186,6 @@ ActiveRecord::Schema[8.0].define(version: 2025_07_31_200856) do
     t.index ["external_id"], name: "index_company_lawyers_on_external_id", unique: true
     t.index ["user_id", "company_id"], name: "index_company_lawyers_on_user_id_and_company_id", unique: true
     t.index ["user_id"], name: "index_company_lawyers_on_user_id"
-  end
-
-  create_table "company_monthly_financial_reports", force: :cascade do |t|
-    t.bigint "company_id", null: false
-    t.integer "year", null: false
-    t.integer "month", null: false
-    t.bigint "net_income_cents", null: false
-    t.bigint "revenue_cents", null: false
-    t.datetime "created_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
-    t.datetime "updated_at", null: false
-    t.index ["company_id", "year", "month"], name: "index_company_monthly_financials_on_company_year_month", unique: true
-    t.index ["company_id"], name: "index_company_monthly_financial_reports_on_company_id"
   end
 
   create_table "company_stripe_accounts", force: :cascade do |t|
@@ -228,26 +203,12 @@ ActiveRecord::Schema[8.0].define(version: 2025_07_31_200856) do
     t.bigint "company_id", null: false
     t.string "title", null: false
     t.text "body", null: false
-    t.text "video_url"
     t.datetime "sent_at"
     t.datetime "created_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
     t.datetime "updated_at", null: false
     t.string "external_id", null: false
-    t.string "period"
-    t.date "period_started_on"
-    t.boolean "show_revenue", default: false, null: false
-    t.boolean "show_net_income", default: false, null: false
     t.index ["company_id"], name: "index_company_updates_on_company_id"
     t.index ["external_id"], name: "index_company_updates_on_external_id", unique: true
-  end
-
-  create_table "company_updates_financial_reports", force: :cascade do |t|
-    t.bigint "company_update_id", null: false
-    t.bigint "company_monthly_financial_report_id", null: false
-    t.datetime "created_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
-    t.datetime "updated_at", null: false
-    t.index ["company_monthly_financial_report_id"], name: "idx_on_company_monthly_financial_report_id_d65ba22efd"
-    t.index ["company_update_id"], name: "index_company_updates_financial_reports_on_company_update_id"
   end
 
   create_table "consolidated_invoices", force: :cascade do |t|
@@ -332,6 +293,7 @@ ActiveRecord::Schema[8.0].define(version: 2025_07_31_200856) do
     t.string "investor_name"
     t.bigint "company_investor_id"
     t.decimal "qualified_dividend_amount_usd", null: false
+    t.bigint "investment_amount_cents", null: false
     t.index ["company_investor_id"], name: "index_dividend_computation_outputs_on_company_investor_id"
     t.index ["dividend_computation_id"], name: "index_dividend_computation_outputs_on_dividend_computation_id"
   end
@@ -344,6 +306,7 @@ ActiveRecord::Schema[8.0].define(version: 2025_07_31_200856) do
     t.date "dividends_issuance_date", null: false
     t.string "external_id", null: false
     t.boolean "return_of_capital", null: false
+    t.datetime "finalized_at"
     t.index ["company_id"], name: "index_dividend_computations_on_company_id"
     t.index ["external_id"], name: "index_dividend_computations_on_external_id", unique: true
   end
@@ -403,9 +366,12 @@ ActiveRecord::Schema[8.0].define(version: 2025_07_31_200856) do
     t.bigint "user_compliance_info_id"
     t.bigint "qualified_amount_cents", null: false
     t.datetime "signed_release_at"
+    t.bigint "investment_amount_cents"
+    t.string "external_id", null: false
     t.index ["company_id"], name: "index_dividends_on_company_id"
     t.index ["company_investor_id"], name: "index_dividends_on_company_investor_id"
     t.index ["dividend_round_id"], name: "index_dividends_on_dividend_round_id"
+    t.index ["external_id"], name: "index_dividends_on_external_id", unique: true
     t.index ["user_compliance_info_id"], name: "index_dividends_on_user_compliance_info_id"
   end
 
@@ -429,19 +395,6 @@ ActiveRecord::Schema[8.0].define(version: 2025_07_31_200856) do
     t.index ["user_id"], name: "index_document_signatures_on_user_id"
   end
 
-  create_table "document_templates", force: :cascade do |t|
-    t.bigint "company_id"
-    t.string "name", null: false
-    t.integer "document_type", null: false
-    t.string "external_id", null: false
-    t.datetime "created_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
-    t.datetime "updated_at", null: false
-    t.boolean "signable", default: false, null: false
-    t.bigint "docuseal_id", null: false
-    t.index ["company_id"], name: "index_document_templates_on_company_id"
-    t.index ["external_id"], name: "index_document_templates_on_external_id", unique: true
-  end
-
   create_table "documents", force: :cascade do |t|
     t.bigint "company_id", null: false
     t.bigint "user_compliance_info_id"
@@ -454,9 +407,8 @@ ActiveRecord::Schema[8.0].define(version: 2025_07_31_200856) do
     t.jsonb "json_data"
     t.datetime "created_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
     t.datetime "updated_at", null: false
-    t.integer "docuseal_submission_id"
+    t.text "text"
     t.index ["company_id"], name: "index_documents_on_company_id"
-    t.index ["docuseal_submission_id"], name: "index_documents_on_docuseal_submission_id"
     t.index ["equity_grant_id"], name: "index_documents_on_equity_grant_id"
     t.index ["user_compliance_info_id"], name: "index_documents_on_user_compliance_info_id"
   end
@@ -566,33 +518,6 @@ ActiveRecord::Schema[8.0].define(version: 2025_07_31_200856) do
     t.index ["equity_exercise_bank_account_id"], name: "idx_on_equity_exercise_bank_account_id_92fefd4aa1"
   end
 
-  create_table "equity_grant_transactions", force: :cascade do |t|
-    t.string "external_id", null: false
-    t.bigint "equity_grant_id", null: false
-    t.enum "transaction_type", null: false, enum_type: "equity_grant_transactions_transaction_type"
-    t.bigint "vesting_event_id"
-    t.bigint "invoice_id"
-    t.bigint "equity_grant_exercise_id"
-    t.jsonb "metadata", default: {}, null: false
-    t.text "notes"
-    t.bigint "vested_shares", default: 0, null: false
-    t.bigint "exercised_shares", default: 0, null: false
-    t.bigint "forfeited_shares", default: 0, null: false
-    t.bigint "total_number_of_shares", null: false
-    t.bigint "total_vested_shares", null: false
-    t.bigint "total_unvested_shares", null: false
-    t.bigint "total_exercised_shares", null: false
-    t.bigint "total_forfeited_shares", null: false
-    t.datetime "created_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
-    t.datetime "updated_at", null: false
-    t.index ["equity_grant_exercise_id"], name: "index_equity_grant_transactions_on_equity_grant_exercise_id"
-    t.index ["equity_grant_id", "transaction_type", "vesting_event_id", "invoice_id", "equity_grant_exercise_id"], name: "idx_equity_grant_transactions_on_all_columns", unique: true
-    t.index ["equity_grant_id"], name: "index_equity_grant_transactions_on_equity_grant_id"
-    t.index ["external_id"], name: "index_equity_grant_transactions_on_external_id", unique: true
-    t.index ["invoice_id"], name: "index_equity_grant_transactions_on_invoice_id"
-    t.index ["vesting_event_id"], name: "index_equity_grant_transactions_on_vesting_event_id"
-  end
-
   create_table "equity_grants", force: :cascade do |t|
     t.string "name", null: false
     t.datetime "period_started_at", null: false
@@ -643,36 +568,6 @@ ActiveRecord::Schema[8.0].define(version: 2025_07_31_200856) do
     t.datetime "updated_at", null: false
     t.string "expense_account_id"
     t.index ["company_id"], name: "index_expense_categories_on_company_id"
-  end
-
-  create_table "integration_records", force: :cascade do |t|
-    t.bigint "integration_id", null: false
-    t.string "integratable_type"
-    t.bigint "integratable_id"
-    t.string "integration_external_id", null: false
-    t.string "sync_token"
-    t.datetime "created_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
-    t.datetime "updated_at", null: false
-    t.datetime "deleted_at"
-    t.jsonb "json_data"
-    t.boolean "quickbooks_journal_entry", default: false, null: false
-    t.index ["integratable_type", "integratable_id"], name: "index_integration_records_on_integratable"
-    t.index ["integration_id"], name: "index_integration_records_on_integration_id"
-  end
-
-  create_table "integrations", force: :cascade do |t|
-    t.bigint "company_id", null: false
-    t.string "type", null: false
-    t.enum "status", default: "initialized", null: false, enum_type: "integration_status"
-    t.jsonb "configuration"
-    t.text "sync_error"
-    t.datetime "last_sync_at"
-    t.datetime "deleted_at"
-    t.datetime "created_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
-    t.datetime "updated_at", null: false
-    t.string "account_id", null: false
-    t.index ["company_id", "type"], name: "unique_active_integration_types", unique: true, where: "(deleted_at IS NULL)"
-    t.index ["company_id"], name: "index_integrations_on_company_id"
   end
 
   create_table "investor_dividend_rounds", force: :cascade do |t|
@@ -816,17 +711,6 @@ ActiveRecord::Schema[8.0].define(version: 2025_07_31_200856) do
     t.index ["wise_recipient_id"], name: "index_payments_on_wise_recipient_id"
   end
 
-  create_table "pg_search_documents", force: :cascade do |t|
-    t.text "content"
-    t.bigint "company_id"
-    t.string "searchable_type"
-    t.bigint "searchable_id"
-    t.datetime "created_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
-    t.datetime "updated_at", null: false
-    t.index ["company_id"], name: "index_pg_search_documents_on_company_id"
-    t.index ["searchable_type", "searchable_id"], name: "index_pg_search_documents_on_searchable"
-  end
-
   create_table "share_classes", force: :cascade do |t|
     t.bigint "company_id", null: false
     t.string "name", null: false
@@ -885,6 +769,7 @@ ActiveRecord::Schema[8.0].define(version: 2025_07_31_200856) do
     t.datetime "created_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
     t.datetime "updated_at", null: false
     t.integer "accepted_price_cents"
+    t.text "letter_of_transmittal", null: false
     t.index ["company_id"], name: "index_tender_offers_on_company_id"
     t.index ["external_id"], name: "index_tender_offers_on_external_id", unique: true
   end
@@ -963,7 +848,9 @@ ActiveRecord::Schema[8.0].define(version: 2025_07_31_200856) do
     t.boolean "team_member", default: false, null: false
     t.boolean "sent_invalid_tax_id_email", default: false, null: false
     t.string "clerk_id"
-    t.bigint "signup_invite_link_id"
+    t.string "otp_secret_key"
+    t.integer "otp_failed_attempts_count", default: 0, null: false
+    t.datetime "otp_first_failed_at"
     t.index ["clerk_id"], name: "index_users_on_clerk_id", unique: true
     t.index ["confirmation_token"], name: "index_users_on_confirmation_token", unique: true
     t.index ["email"], name: "index_users_on_email", unique: true
@@ -972,7 +859,6 @@ ActiveRecord::Schema[8.0].define(version: 2025_07_31_200856) do
     t.index ["invited_by_id"], name: "index_users_on_invited_by_id"
     t.index ["invited_by_type", "invited_by_id"], name: "index_users_on_invited_by"
     t.index ["reset_password_token"], name: "index_users_on_reset_password_token", unique: true
-    t.index ["signup_invite_link_id"], name: "index_users_on_signup_invite_link_id"
   end
 
   create_table "versions", force: :cascade do |t|

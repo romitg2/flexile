@@ -11,11 +11,6 @@ export enum DocumentType {
   ExerciseNotice,
 }
 
-export enum DocumentTemplateType {
-  ConsultingContract = 0,
-  EquityPlanContract,
-}
-
 export enum BusinessType {
   LLC = 0,
   CCorporation,
@@ -27,6 +22,11 @@ export enum TaxClassification {
   CCorporation = 0,
   SCorporation,
   Partnership,
+}
+
+export enum SignInMethod {
+  Email = "email",
+  Google = "google",
 }
 
 export const invoiceStatuses = [
@@ -50,5 +50,3 @@ export const optionGrantIssueDateRelationships = [
   "executive",
   "board_member",
 ] as const;
-
-export const companyUpdatePeriods = ["month", "quarter", "year"] as const;

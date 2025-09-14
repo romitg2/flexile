@@ -14,8 +14,9 @@ const ComboBox = ({
   placeholder = "Select...",
   className,
   modal,
+  showSearch = true,
   ...props
-}: { options: { value: string; label: string }[]; placeholder?: string; modal?: boolean } & (
+}: { options: { value: string; label: string }[]; placeholder?: string; modal?: boolean; showSearch?: boolean } & (
   | { multiple: true; value: string[]; onChange: (value: string[]) => void }
   | { multiple?: false; value: string | null | undefined; onChange: (value: string) => void }
 ) &
@@ -33,7 +34,10 @@ const ComboBox = ({
           role="combobox"
           aria-expanded={open}
           {...props}
-          className={cn("w-full min-w-0 justify-between", className)}
+          className={cn(
+            "focus-visible:ring-ring/15 w-full min-w-0 justify-between outline-none focus-visible:border-gray-300 focus-visible:ring-[3px] focus-visible:outline-hidden",
+            className,
+          )}
         >
           <div className="truncate">
             {value?.length ? (multiple ? value.map(getLabel).join(", ") : getLabel(value)) : placeholder}
@@ -43,18 +47,20 @@ const ComboBox = ({
       </PopoverTrigger>
       <PopoverContent className="p-0" style={{ width: "var(--radix-popover-trigger-width)" }}>
         <Command>
-          <CommandInput
-            placeholder="Search..."
-            onValueChange={() => {
-              requestAnimationFrame(() => {
-                if (listRef.current) {
-                  listRef.current.scrollTop = 0;
-                }
-              });
-            }}
-          />
+          {showSearch ? (
+            <CommandInput
+              placeholder="Search..."
+              onValueChange={() => {
+                requestAnimationFrame(() => {
+                  if (listRef.current) {
+                    listRef.current.scrollTop = 0;
+                  }
+                });
+              }}
+            />
+          ) : null}
           <CommandList ref={listRef}>
-            <CommandEmpty>No results found.</CommandEmpty>
+            {showSearch ? <CommandEmpty>No results found.</CommandEmpty> : null}
             <CommandGroup>
               {options.map((option) => (
                 <CommandItem

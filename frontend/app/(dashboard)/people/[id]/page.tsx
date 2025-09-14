@@ -5,10 +5,10 @@ import { useMutation } from "@tanstack/react-query";
 import { TRPCClientError } from "@trpc/react-query";
 import { isFuture } from "date-fns";
 import { Decimal } from "decimal.js";
-import { AlertTriangle, CircleCheck, Copy } from "lucide-react";
+import { AlertTriangle, CircleCheck, Copy, Plus } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { parseAsString, useQueryState } from "nuqs";
-import React, { useMemo, useState } from "react";
+import React, { type Dispatch, type SetStateAction, useMemo, useState } from "react";
 import type { DateValue } from "react-aria-components";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -28,18 +28,29 @@ import TableSkeleton from "@/components/TableSkeleton";
 import Tabs from "@/components/Tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { useCurrentCompany, useCurrentUser } from "@/global";
 import { MAXIMUM_EQUITY_PERCENTAGE, MINIMUM_EQUITY_PERCENTAGE } from "@/models";
+import { countries } from "@/models/constants";
 import type { RouterOutput } from "@/trpc";
 import { trpc } from "@/trpc/client";
 import { formatMoney, formatMoneyFromCents } from "@/utils/formatMoney";
 import { request } from "@/utils/request";
 import { approve_company_invoices_path, company_equity_exercise_payment_path } from "@/utils/routes";
-import { formatDate } from "@/utils/time";
+import { formatDate, serverDateToLocal } from "@/utils/time";
+import { useIsMobile } from "@/utils/use-mobile";
 import FormFields, { schema as formSchema } from "../FormFields";
 
 const issuePaymentSchema = z.object({
@@ -177,210 +188,274 @@ export default function ContractorPage() {
         title={user.displayName}
         headerActions={
           contractor ? (
-            <div className="flex items-center gap-3">
-              <Button onClick={() => setIssuePaymentModalOpen(true)}>Issue payment</Button>
-              {contractor.endedAt && !isFuture(contractor.endedAt) ? (
-                <Status variant="critical">Alumni</Status>
-              ) : !contractor.endedAt || isFuture(contractor.endedAt) ? (
-                <Button variant="outline" onClick={() => setEndModalOpen(true)}>
-                  End contract
-                </Button>
-              ) : null}
-            </div>
+            <ActionPanel
+              contractor={contractor}
+              setIssuePaymentModalOpen={setIssuePaymentModalOpen}
+              setEndModalOpen={setEndModalOpen}
+            />
           ) : null
         }
       />
 
-      <Dialog open={endModalOpen} onOpenChange={setEndModalOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>End contract with {user.displayName}?</DialogTitle>
-          </DialogHeader>
-          <p>This action cannot be undone.</p>
-          <div className="grid gap-2">
-            <DatePicker value={endDate} onChange={setEndDate} label="End date" granularity="day" />
-          </div>
-          <div className="grid gap-3">
-            <Status variant="success">{user.displayName} will be able to submit invoices after contract end.</Status>
-            <Status variant="success">{user.displayName} will receive upcoming payments.</Status>
-            <Status variant="success">
-              {user.displayName} will be able to see and download their invoice history.
-            </Status>
-            <Status variant="critical">
-              {user.displayName} won't see any of {company.name}'s information.
-            </Status>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEndModalOpen(false)}>
-              No, cancel
-            </Button>
-            <MutationButton
-              mutation={endContract}
-              param={{ companyId: company.id, id: contractor?.id ?? "", endDate: endDate?.toString() ?? "" }}
-            >
-              Yes, end contract
-            </MutationButton>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <div className="px-4">
+        <Dialog open={endModalOpen} onOpenChange={setEndModalOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>End contract with {user.displayName}?</DialogTitle>
+            </DialogHeader>
+            <p>This action cannot be undone.</p>
+            <div className="grid gap-2">
+              <DatePicker value={endDate} onChange={setEndDate} label="End date" granularity="day" />
+            </div>
+            <div className="grid gap-3">
+              <Status variant="success">{user.displayName} will be able to submit invoices after contract end.</Status>
+              <Status variant="success">{user.displayName} will receive upcoming payments.</Status>
+              <Status variant="success">
+                {user.displayName} will be able to see and download their invoice history.
+              </Status>
+              <Status variant="critical">
+                {user.displayName} won't see any of {company.name}'s information.
+              </Status>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" size="small" onClick={() => setEndModalOpen(false)}>
+                No, cancel
+              </Button>
+              <MutationButton
+                size="small"
+                mutation={endContract}
+                param={{ companyId: company.id, id: contractor?.id ?? "", endDate: endDate?.toString() ?? "" }}
+              >
+                Yes, end contract
+              </MutationButton>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
-      <Dialog open={cancelModalOpen} onOpenChange={setCancelModalOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Cancel contract end with {user.displayName}?</DialogTitle>
-          </DialogHeader>
-          <p>This will remove the scheduled end date for this contract.</p>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCancelModalOpen(false)}>
-              No, keep end date
-            </Button>
-            <MutationButton mutation={cancelContractEndMutation}>Yes, cancel contract end</MutationButton>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        <Dialog open={cancelModalOpen} onOpenChange={setCancelModalOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Cancel contract end with {user.displayName}?</DialogTitle>
+            </DialogHeader>
+            <p>This will remove the scheduled end date for this contract.</p>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setCancelModalOpen(false)}>
+                No, keep end date
+              </Button>
+              <MutationButton mutation={cancelContractEndMutation}>Yes, cancel contract end</MutationButton>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
-      <Dialog open={issuePaymentModalOpen} onOpenChange={closeIssuePaymentModal}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Issue one-time payment</DialogTitle>
-          </DialogHeader>
-          <Form {...issuePaymentForm}>
-            <form onSubmit={(e) => void submitIssuePayment(e)} className="grid gap-4">
-              <FormField
-                control={issuePaymentForm.control}
-                name="amountInCents"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Amount</FormLabel>
-                    <FormControl>
-                      <NumberInput
-                        {...field}
-                        value={field.value ? field.value / 100 : null}
-                        onChange={(value) =>
-                          field.onChange(value == null ? null : new Decimal(value).mul(100).toNumber())
-                        }
-                        prefix="$"
-                        decimal
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={issuePaymentForm.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>What is this for?</FormLabel>
-                    <FormControl>
-                      <Input {...field} placeholder="Enter payment description" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              {company.flags.includes("equity") ? (
-                <div className="space-y-4">
-                  <FormField
-                    control={issuePaymentForm.control}
-                    name="equityType"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormControl>
-                          <RadioButtons
-                            {...field}
-                            options={[
-                              { label: "Fixed equity percentage", value: "fixed" },
-                              { label: "Equity percentage range", value: "range" },
-                            ]}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+        <Dialog open={issuePaymentModalOpen} onOpenChange={closeIssuePaymentModal}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Issue one-time payment</DialogTitle>
+            </DialogHeader>
+            <Form {...issuePaymentForm}>
+              <form onSubmit={(e) => void submitIssuePayment(e)} className="grid gap-4">
+                <FormField
+                  control={issuePaymentForm.control}
+                  name="amountInCents"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Amount</FormLabel>
+                      <FormControl>
+                        <NumberInput
+                          {...field}
+                          value={field.value ? field.value / 100 : null}
+                          onChange={(value) =>
+                            field.onChange(value == null ? null : new Decimal(value).mul(100).toNumber())
+                          }
+                          prefix="$"
+                          decimal
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={issuePaymentForm.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>What is this for?</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="Enter payment description" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                {company.flags.includes("equity") ? (
+                  <div className="space-y-4">
+                    <FormField
+                      control={issuePaymentForm.control}
+                      name="equityType"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormControl>
+                            <RadioButtons
+                              {...field}
+                              options={[
+                                { label: "Fixed equity percentage", value: "fixed" },
+                                { label: "Equity percentage range", value: "range" },
+                              ]}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
 
-                  <FormField
-                    control={issuePaymentForm.control}
-                    name="equityPercentage"
-                    render={({ field }) => (
-                      <FormItem hidden={issuePaymentValues.equityType === "range"}>
-                        <FormLabel>Equity percentage</FormLabel>
-                        <FormControl>
-                          <NumberInput {...field} suffix="%" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={issuePaymentForm.control}
-                    name="equityRange"
-                    render={({ field }) => (
-                      <FormItem hidden={issuePaymentValues.equityType === "fixed"}>
-                        <FormControl>
-                          <Slider value={field.value} minStepsBetweenThumbs={1} onValueChange={field.onChange} />
-                        </FormControl>
-                        <FormMessage>
-                          <div className="flex justify-between">
-                            <span>{(field.value[0] / 100).toLocaleString(undefined, { style: "percent" })}</span>
-                            <span>{(field.value[1] / 100).toLocaleString(undefined, { style: "percent" })}</span>
-                          </div>
-                        </FormMessage>
-                      </FormItem>
-                    )}
-                  />
-                </div>
-              ) : null}
+                    <FormField
+                      control={issuePaymentForm.control}
+                      name="equityPercentage"
+                      render={({ field }) => (
+                        <FormItem hidden={issuePaymentValues.equityType === "range"}>
+                          <FormLabel>Equity percentage</FormLabel>
+                          <FormControl>
+                            <NumberInput {...field} suffix="%" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={issuePaymentForm.control}
+                      name="equityRange"
+                      render={({ field }) => (
+                        <FormItem hidden={issuePaymentValues.equityType === "fixed"}>
+                          <FormControl>
+                            <Slider value={field.value} minStepsBetweenThumbs={1} onValueChange={field.onChange} />
+                          </FormControl>
+                          <FormMessage>
+                            <div className="flex justify-between">
+                              <span>{(field.value[0] / 100).toLocaleString(undefined, { style: "percent" })}</span>
+                              <span>{(field.value[1] / 100).toLocaleString(undefined, { style: "percent" })}</span>
+                            </div>
+                          </FormMessage>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                ) : null}
 
-              {issuePaymentForm.formState.errors.root ? (
-                <small className="text-red">{issuePaymentForm.formState.errors.root.message}</small>
-              ) : null}
+                {issuePaymentForm.formState.errors.root ? (
+                  <small className="text-red">{issuePaymentForm.formState.errors.root.message}</small>
+                ) : null}
 
-              <small className="text-gray-600">
-                Your'll be able to initiate payment once it has been accepted by the recipient
-                {company.requiredInvoiceApprovals > 1 ? " and has sufficient approvals" : ""}.
-              </small>
+                <small className="text-gray-600">
+                  Your'll be able to initiate payment once it has been accepted by the recipient
+                  {company.requiredInvoiceApprovals > 1 ? " and has sufficient approvals" : ""}.
+                </small>
 
-              <DialogFooter>
-                <div className="flex justify-end">
-                  <MutationStatusButton
-                    type="submit"
-                    mutation={issuePaymentMutation}
-                    successText="Payment submitted!"
-                    loadingText="Saving..."
-                  >
-                    Issue payment
-                  </MutationStatusButton>
-                </div>
-              </DialogFooter>
-            </form>
-          </Form>
-        </DialogContent>
-      </Dialog>
+                <DialogFooter>
+                  <div className="flex justify-end">
+                    <MutationStatusButton
+                      type="submit"
+                      size="small"
+                      mutation={issuePaymentMutation}
+                      successText="Payment submitted!"
+                      loadingText="Saving..."
+                    >
+                      Issue payment
+                    </MutationStatusButton>
+                  </div>
+                </DialogFooter>
+              </form>
+            </Form>
+          </DialogContent>
+        </Dialog>
 
-      {tabs.length > 1 ? <Tabs links={tabs.map((tab) => ({ label: tab.label, route: `?tab=${tab.tab}` }))} /> : null}
+        <div className="space-y-8">
+          {tabs.length > 1 ? (
+            <Tabs links={tabs.map((tab) => ({ label: tab.label, route: `?tab=${tab.tab}` }))} />
+          ) : null}
 
-      {(() => {
-        switch (selectedTab) {
-          case "options":
-            return investor ? <OptionsTab investorId={investor.id} userId={id} /> : null;
-          case "shares":
-            return investor ? <SharesTab investorId={investor.id} /> : null;
-          case "convertibles":
-            return investor ? <ConvertiblesTab investorId={investor.id} /> : null;
-          case "exercises":
-            return investor ? <ExercisesTab investorId={investor.id} /> : null;
-          case "dividends":
-            return investor ? <DividendsTab investorId={investor.id} /> : null;
-          case "details":
-            return <DetailsTab userId={id} setCancelModalOpen={setCancelModalOpen} />;
-        }
-      })()}
+          {(() => {
+            switch (selectedTab) {
+              case "options":
+                return investor ? <OptionsTab investorId={investor.id} userId={id} /> : null;
+              case "shares":
+                return investor ? <SharesTab investorId={investor.id} /> : null;
+              case "convertibles":
+                return investor ? <ConvertiblesTab investorId={investor.id} /> : null;
+              case "exercises":
+                return investor ? <ExercisesTab investorId={investor.id} /> : null;
+              case "dividends":
+                return investor ? <DividendsTab investorId={investor.id} /> : null;
+              case "details":
+                return <DetailsTab userId={id} setCancelModalOpen={setCancelModalOpen} />;
+            }
+          })()}
+        </div>
+      </div>
     </>
   );
 }
+
+const ActionPanel = ({
+  contractor,
+  setIssuePaymentModalOpen,
+  setEndModalOpen,
+}: {
+  contractor: { endedAt: Date | null };
+  setIssuePaymentModalOpen: Dispatch<SetStateAction<boolean>>;
+  setEndModalOpen: Dispatch<SetStateAction<boolean>>;
+}) => {
+  const isMobile = useIsMobile();
+  const handleIssuePaymentClick = () => {
+    setIssuePaymentModalOpen(true);
+  };
+  const handleEndContractClick = () => {
+    setEndModalOpen(true);
+  };
+
+  return isMobile ? (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button variant="floating-action">
+          <Plus />
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogTitle>Manage Payment or Contract</DialogTitle>
+        <DialogDescription className="sr-only">Manage Payment or Contract</DialogDescription>
+        <div className="flex flex-col gap-3">
+          <DialogClose asChild onClick={handleIssuePaymentClick}>
+            <Button size="small">Issue payment</Button>
+          </DialogClose>
+          {contractor.endedAt && !isFuture(contractor.endedAt) ? (
+            <Status className="justify-center" variant="critical">
+              Alumni
+            </Status>
+          ) : !contractor.endedAt || isFuture(contractor.endedAt) ? (
+            <DialogClose asChild onClick={handleEndContractClick}>
+              <Button variant="outline" size="small">
+                End contract
+              </Button>
+            </DialogClose>
+          ) : null}
+        </div>
+      </DialogContent>
+    </Dialog>
+  ) : (
+    <div className="flex items-center gap-3">
+      <Button size="small" onClick={handleIssuePaymentClick}>
+        Issue payment
+      </Button>
+      {contractor.endedAt && !isFuture(contractor.endedAt) ? (
+        <Status variant="critical">Alumni</Status>
+      ) : !contractor.endedAt || isFuture(contractor.endedAt) ? (
+        <Button variant="outline" size="small" onClick={handleEndContractClick}>
+          End contract
+        </Button>
+      ) : null}
+    </div>
+  );
+};
 
 const DetailsTab = ({
   userId,
@@ -390,22 +465,19 @@ const DetailsTab = ({
   setCancelModalOpen: (open: boolean) => void;
 }) => {
   const company = useCurrentCompany();
-  const router = useRouter();
   const [user] = trpc.users.get.useSuspenseQuery({ companyId: company.id, id: userId });
   const [contractor] = trpc.contractors.get.useSuspenseQuery({ companyId: company.id, userId });
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
-    defaultValues: contractor,
+    defaultValues: { ...contractor, role: contractor.role ?? "" },
     disabled: !!contractor.endedAt,
   });
   const payRateInSubunits = form.watch("payRateInSubunits");
   const trpcUtils = trpc.useUtils();
   const updateContractor = trpc.contractors.update.useMutation({
-    onSuccess: async (data) => {
+    onSuccess: async () => {
       await trpcUtils.contractors.list.invalidate();
-      await trpcUtils.documents.list.invalidate();
       await trpcUtils.contractors.get.invalidate({ userId });
-      return router.push(data.documentId ? `/documents?sign=${data.documentId}` : "/people");
     },
   });
   const submit = form.handleSubmit((values) =>
@@ -422,11 +494,12 @@ const DetailsTab = ({
         <form onSubmit={(e) => void submit(e)} className="grid gap-4">
           <h2 className="text-xl font-bold">Contract</h2>
           {contractor.endedAt ? (
-            <Alert variant="destructive">
+            <Alert className="mx-4" variant="destructive">
               <AlertTriangle />
               <AlertDescription>
                 <div className="flex items-center justify-between">
-                  Contract {isFuture(contractor.endedAt) ? "ends" : "ended"} on {formatDate(contractor.endedAt)}.
+                  Contract {isFuture(contractor.endedAt) ? "ends" : "ended"} on{" "}
+                  {formatDate(serverDateToLocal(contractor.endedAt))}.
                   {isFuture(contractor.endedAt) && (
                     <Button variant="outline" onClick={() => setCancelModalOpen(true)}>
                       Cancel contract end
@@ -470,6 +543,7 @@ const DetailsTab = ({
           {!contractor.endedAt && (
             <MutationStatusButton
               type="submit"
+              size="small"
               mutation={updateContractor}
               loadingText="Saving..."
               className="justify-self-end"
@@ -589,7 +663,7 @@ const DetailsTab = ({
               <FormItem>
                 <FormLabel>Country of residence</FormLabel>
                 <FormControl>
-                  <Input {...field} />
+                  <Input {...field} value={field.value ? countries.get(field.value) : null} />
                 </FormControl>
                 <FormMessage />
               </FormItem>

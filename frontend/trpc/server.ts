@@ -5,6 +5,7 @@ import { companiesRouter } from "@/trpc/routes/companies";
 import { equityCalculationsRouter } from "@/trpc/routes/equityCalculations";
 import { filesRouter } from "@/trpc/routes/files";
 import { investorEntitiesRouter } from "@/trpc/routes/investorEntities";
+import { administratorsRouter } from "./routes/administrators";
 import { companyInviteLinksRouter } from "./routes/companyInviteLinks";
 import { companyUpdatesRouter } from "./routes/companyUpdates";
 import { consolidatedInvoicesRouter } from "./routes/consolidatedInvoices";
@@ -20,8 +21,8 @@ import { investorsRouter } from "./routes/investors";
 import { invoicesRouter } from "./routes/invoices";
 import { lawyersRouter } from "./routes/lawyers";
 import { optionPoolsRouter } from "./routes/optionPools";
-import { quickbooksRouter } from "./routes/quickbooks";
 import { shareHoldingsRouter } from "./routes/shareHoldings";
+import { supportRouter } from "./routes/support";
 import { tenderOffersRouter } from "./routes/tenderOffers";
 import { usersRouter } from "./routes/users";
 import { createClient } from "./shared";
@@ -30,7 +31,6 @@ import { createCallerFactory, createRouter } from "./";
 export const appRouter = createRouter({
   users: usersRouter,
   contractors: contractorsRouter,
-  quickbooks: quickbooksRouter,
   invoices: invoicesRouter,
   consolidatedInvoices: consolidatedInvoicesRouter,
   documents: documentsRouter,
@@ -53,10 +53,14 @@ export const appRouter = createRouter({
   investorEntities: investorEntitiesRouter,
   equityCalculations: equityCalculationsRouter,
   lawyers: lawyersRouter,
+  administrators: administratorsRouter,
   companyInviteLinks: companyInviteLinksRouter,
+  support: supportRouter,
 });
 export type AppRouter = typeof appRouter;
 
 export const getQueryClient = cache(createClient);
-const caller = createCallerFactory(appRouter)({ userId: null, host: "", ipAddress: "", userAgent: "", headers: {} });
+const createCaller = createCallerFactory(appRouter);
+const caller = createCaller({ userId: null, headers: {} });
 export const { trpc, HydrateClient } = createHydrationHelpers<typeof appRouter>(caller, getQueryClient);
+export const createServerCaller = ({ userId }: { userId: number }) => createCaller({ userId, headers: {} });

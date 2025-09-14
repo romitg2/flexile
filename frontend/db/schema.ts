@@ -23,8 +23,6 @@ import { customAlphabet } from "nanoid";
 import { deterministicEncryptedString, encryptedJson, encryptedString } from "@/lib/encryptedField";
 import {
   BusinessType,
-  companyUpdatePeriods,
-  DocumentTemplateType,
   DocumentType,
   invoiceStatuses,
   optionGrantIssueDateRelationships,
@@ -33,18 +31,9 @@ import {
   PayRateType,
   TaxClassification,
 } from "./enums";
-import type { QuickbooksIntegrationConfiguration } from "./json";
 
 const nanoid = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 13);
 
-export const equityGrantTransactionsTransactionType = pgEnum("equity_grant_transactions_transaction_type", [
-  "scheduled_vesting",
-  "vesting_post_invoice_payment",
-  "exercise",
-  "cancellation",
-  "manual_adjustment",
-  "end_of_period_forfeiture",
-]);
 export const equityGrantsIssueDateRelationship = pgEnum(
   "equity_grants_issue_date_relationship",
   optionGrantIssueDateRelationships,
@@ -166,34 +155,6 @@ export const companyLawyers = pgTable(
       "btree",
       table.userId.asc().nullsLast().op("int8_ops"),
       table.companyId.asc().nullsLast().op("int8_ops"),
-    ),
-  ],
-);
-
-export const companyMonthlyFinancialReports = pgTable(
-  "company_monthly_financial_reports",
-  {
-    id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
-    companyId: bigint("company_id", { mode: "bigint" }).notNull(),
-    year: integer().notNull(),
-    month: integer().notNull(),
-    netIncomeCents: bigint("net_income_cents", { mode: "bigint" }).notNull(),
-    revenueCents: bigint("revenue_cents", { mode: "bigint" }).notNull(),
-    createdAt: timestamp("created_at", { precision: 6, mode: "date" }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { precision: 6, mode: "date" })
-      .notNull()
-      .$onUpdate(() => new Date()),
-  },
-  (table) => [
-    index("index_company_monthly_financial_reports_on_company_id").using(
-      "btree",
-      table.companyId.asc().nullsLast().op("int8_ops"),
-    ),
-    uniqueIndex("index_company_monthly_financials_on_company_year_month").using(
-      "btree",
-      table.companyId.asc().nullsLast().op("int8_ops"),
-      table.year.asc().nullsLast().op("int4_ops"),
-      table.month.asc().nullsLast().op("int4_ops"),
     ),
   ],
 );
@@ -365,6 +326,7 @@ export const dividendComputationOutputs = pgTable(
     investorName: varchar("investor_name"),
     companyInvestorId: bigint("company_investor_id", { mode: "bigint" }),
     qualifiedDividendAmountUsd: numeric("qualified_dividend_amount_usd").notNull(),
+    investmentAmountCents: bigint("investment_amount_cents", { mode: "bigint" }).notNull(),
   },
   (table) => [
     index("index_dividend_computation_outputs_on_company_investor_id").using(
@@ -423,6 +385,7 @@ export const dividendComputations = pgTable(
     dividendsIssuanceDate: date("dividends_issuance_date", { mode: "string" }).notNull(),
     externalId: varchar("external_id").$default(nanoid).notNull(),
     returnOfCapital: boolean("return_of_capital").notNull(),
+    finalizedAt: timestamp("finalized_at", { precision: 6, mode: "date" }),
   },
   (table) => [
     index("index_dividend_computations_on_company_id").using("btree", table.companyId.asc().nullsLast().op("int8_ops")),
@@ -483,6 +446,8 @@ export const dividends = pgTable(
     userComplianceInfoId: bigint("user_compliance_info_id", { mode: "bigint" }),
     qualifiedAmountCents: bigint("qualified_amount_cents", { mode: "bigint" }).notNull(),
     signedReleaseAt: timestamp("signed_release_at", { precision: 6, mode: "date" }),
+    investmentAmountCents: bigint("investment_amount_cents", { mode: "bigint" }),
+    externalId: varchar("external_id").$default(nanoid).notNull(),
   },
   (table) => [
     index("index_dividends_on_company_id").using("btree", table.companyId.asc().nullsLast().op("int8_ops")),
@@ -498,6 +463,7 @@ export const dividends = pgTable(
       "btree",
       table.userComplianceInfoId.asc().nullsLast().op("int8_ops"),
     ),
+    uniqueIndex("index_dividends_on_external_id").using("btree", table.externalId.asc().nullsLast().op("text_ops")),
   ],
 );
 
@@ -523,34 +489,6 @@ export const dividendsDividendPayments = pgTable(
   ],
 );
 
-export const documentTemplates = pgTable(
-  "document_templates",
-  {
-    id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
-    companyId: bigint("company_id", { mode: "bigint" }),
-    name: varchar().notNull(),
-    type: integer("document_type").$type<DocumentTemplateType>().notNull(),
-    externalId: varchar("external_id").$default(nanoid).notNull(),
-    docusealId: bigint("docuseal_id", { mode: "bigint" }).notNull(),
-    signable: boolean("signable").notNull().default(false),
-    createdAt: timestamp("created_at", { precision: 6, mode: "date" }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { precision: 6, mode: "date" })
-      .notNull()
-      .$onUpdate(() => new Date()),
-  },
-  (table) => [
-    index("index_document_templates_on_company_id").using("btree", table.companyId.asc().nullsLast().op("int8_ops")),
-    uniqueIndex("index_document_templates_on_external_id").using(
-      "btree",
-      table.externalId.asc().nullsLast().op("text_ops"),
-    ),
-    uniqueIndex("index_document_templates_on_docuseal_id").using(
-      "btree",
-      table.docusealId.asc().nullsLast().op("int8_ops"),
-    ),
-  ],
-);
-
 export const documents = pgTable(
   "documents",
   {
@@ -568,7 +506,7 @@ export const documents = pgTable(
     updatedAt: timestamp("updated_at", { precision: 6, mode: "date" })
       .$onUpdate(() => new Date())
       .notNull(),
-    docusealSubmissionId: integer("docuseal_submission_id"),
+    text: text(),
   },
   (table) => [
     index("index_documents_on_company_id").using("btree", table.companyId.asc().nullsLast().op("int8_ops")),
@@ -576,10 +514,6 @@ export const documents = pgTable(
     index("index_documents_on_user_compliance_info_id").using(
       "btree",
       table.userComplianceInfoId.asc().nullsLast().op("int8_ops"),
-    ),
-    index("index_documents_on_docuseal_submission_id").using(
-      "btree",
-      table.docusealSubmissionId.asc().nullsLast().op("int4_ops"),
     ),
   ],
 );
@@ -673,7 +607,6 @@ export const integrationRecords = pgTable(
     deletedAt: timestamp("deleted_at", { precision: 6, mode: "date" }),
 
     jsonData: jsonb("json_data"),
-    quickbooksJournalEntry: boolean("quickbooks_journal_entry").notNull().default(false),
   },
   (table) => [
     index("index_integration_records_on_integratable").using(
@@ -710,9 +643,9 @@ export const integrations = pgTable(
   {
     id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
     companyId: bigint("company_id", { mode: "bigint" }).notNull(),
-    type: varchar().notNull().$type<"QuickbooksIntegration">(),
+    type: varchar().notNull(),
     status: integrationStatus().default("initialized").notNull(),
-    configuration: encryptedJson().$type<QuickbooksIntegrationConfiguration>(),
+    configuration: encryptedJson(),
     syncError: text("sync_error"),
     lastSyncAt: timestamp("last_sync_at", { precision: 6, mode: "date" }),
     deletedAt: timestamp("deleted_at", { precision: 6, mode: "date" }),
@@ -883,29 +816,6 @@ export const payments = pgTable(
       table.wiseCredentialId.asc().nullsLast().op("int8_ops"),
     ),
     index("index_payments_on_wise_recipient_id").using("btree", table.wiseRecipientId.asc().nullsLast().op("int8_ops")),
-  ],
-);
-
-export const pgSearchDocuments = pgTable(
-  "pg_search_documents",
-  {
-    id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
-    content: text(),
-    companyId: bigint("company_id", { mode: "bigint" }),
-    searchableType: varchar("searchable_type"),
-    searchableId: bigint("searchable_id", { mode: "bigint" }),
-    createdAt: timestamp("created_at", { precision: 6, mode: "date" }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { precision: 6, mode: "date" })
-      .notNull()
-      .$onUpdate(() => new Date()),
-  },
-  (table) => [
-    index("index_pg_search_documents_on_company_id").using("btree", table.companyId.asc().nullsLast().op("int8_ops")),
-    index("index_pg_search_documents_on_searchable").using(
-      "btree",
-      table.searchableType.asc().nullsLast().op("int8_ops"),
-      table.searchableId.asc().nullsLast().op("int8_ops"),
-    ),
   ],
 );
 
@@ -1210,6 +1120,7 @@ export const tenderOffers = pgTable(
       .notNull()
       .$onUpdate(() => new Date()),
     acceptedPriceCents: integer("accepted_price_cents"),
+    letterOfTransmittal: text("letter_of_transmittal").notNull(),
   },
   (table) => [
     index("index_tender_offers_on_company_id").using("btree", table.companyId.asc().nullsLast().op("int8_ops")),
@@ -1543,63 +1454,6 @@ export const equityGrants = pgTable(
   ],
 );
 
-export const equityGrantTransactions = pgTable(
-  "equity_grant_transactions",
-  {
-    id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
-    externalId: varchar("external_id").$default(nanoid).notNull(),
-    equityGrantId: bigint("equity_grant_id", { mode: "bigint" }).notNull(),
-    transactionType: equityGrantTransactionsTransactionType("transaction_type").notNull(),
-    vestingEventId: bigint("vesting_event_id", { mode: "bigint" }),
-    invoiceId: bigint("invoice_id", { mode: "bigint" }),
-    equityGrantExerciseId: bigint("equity_grant_exercise_id", { mode: "bigint" }),
-    metadata: jsonb().default({}).notNull(),
-    notes: text(),
-    vestedShares: bigint("vested_shares", { mode: "bigint" }).default(0n).notNull(),
-    exercisedShares: bigint("exercised_shares", { mode: "bigint" }).default(0n).notNull(),
-    forfeitedShares: bigint("forfeited_shares", { mode: "bigint" }).default(0n).notNull(),
-    totalNumberOfShares: bigint("total_number_of_shares", { mode: "bigint" }).notNull(),
-    totalVestedShares: bigint("total_vested_shares", { mode: "bigint" }).notNull(),
-    totalUnvestedShares: bigint("total_unvested_shares", { mode: "bigint" }).notNull(),
-    totalExercisedShares: bigint("total_exercised_shares", { mode: "bigint" }).notNull(),
-    totalForfeitedShares: bigint("total_forfeited_shares", { mode: "bigint" }).notNull(),
-    createdAt: timestamp("created_at", { precision: 6, mode: "date" }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { precision: 6, mode: "date" })
-      .notNull()
-      .$onUpdate(() => new Date()),
-  },
-  (table) => [
-    index("idx_equity_grant_transactions_on_all_columns").using(
-      "btree",
-      table.equityGrantId.asc().nullsLast().op("int8_ops"),
-      table.transactionType.asc().nullsLast().op("enum_ops"),
-      table.vestingEventId.asc().nullsLast().op("int8_ops"),
-      table.invoiceId.asc().nullsLast().op("int8_ops"),
-      table.equityGrantExerciseId.asc().nullsLast().op("enum_ops"),
-    ),
-    index("index_equity_grant_transactions_on_equity_grant_exercise_id").using(
-      "btree",
-      table.equityGrantExerciseId.asc().nullsLast().op("int8_ops"),
-    ),
-    index("index_equity_grant_transactions_on_equity_grant_id").using(
-      "btree",
-      table.equityGrantId.asc().nullsLast().op("int8_ops"),
-    ),
-    index("index_equity_grant_transactions_on_external_id").using(
-      "btree",
-      table.externalId.asc().nullsLast().op("text_ops"),
-    ),
-    index("index_equity_grant_transactions_on_invoice_id").using(
-      "btree",
-      table.invoiceId.asc().nullsLast().op("int8_ops"),
-    ),
-    index("index_equity_grant_transactions_on_vesting_event_id").using(
-      "btree",
-      table.vestingEventId.asc().nullsLast().op("int8_ops"),
-    ),
-  ],
-);
-
 export const companyUpdates = pgTable(
   "company_updates",
   {
@@ -1608,17 +1462,12 @@ export const companyUpdates = pgTable(
     title: varchar().notNull(),
     body: text().notNull(),
 
-    videoUrl: text("video_url"),
     sentAt: timestamp("sent_at", { precision: 6, mode: "date" }),
     createdAt: timestamp("created_at", { precision: 6, mode: "date" }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { precision: 6, mode: "date" })
       .notNull()
       .$onUpdate(() => new Date()),
     externalId: varchar("external_id").$default(nanoid).notNull(),
-    period: varchar({ enum: companyUpdatePeriods }),
-    periodStartedOn: date("period_started_on", { mode: "string" }),
-    showRevenue: boolean("show_revenue").notNull().default(false),
-    showNetIncome: boolean("show_net_income").notNull().default(false),
   },
   (table) => [
     index("index_company_updates_on_company_id").using("btree", table.companyId.asc().nullsLast().op("int8_ops")),
@@ -1638,7 +1487,7 @@ export const companyContractors = pgTable(
       .notNull()
       .$onUpdate(() => new Date()),
     endedAt: timestamp("ended_at", { precision: 6, mode: "date" }),
-    role: varchar("role").notNull(),
+    role: varchar("role"),
     externalId: varchar("external_id").$default(nanoid).notNull(),
     payRateType: integer("pay_rate_type").$type<PayRateType>().default(PayRateType.Hourly).notNull(),
     payRateInSubunits: integer("pay_rate_in_subunits"),
@@ -1756,18 +1605,19 @@ export const companies = pgTable(
 
     externalId: varchar("external_id").$default(nanoid).notNull(),
     countryCode: varchar("country_code"),
-    isGumroad: boolean("is_gumroad").notNull().default(false),
     isTrusted: boolean("is_trusted").notNull().default(false),
     equityEnabled: boolean("equity_enabled").notNull().default(false),
     showAnalyticsToContractors: boolean("show_analytics_to_contractors").notNull().default(false),
     defaultCurrency: varchar("default_currency").default("usd").notNull(),
 
-    lawyersEnabled: boolean("lawyers_enabled").notNull().default(false),
     conversionSharePriceUsd: numeric("conversion_share_price_usd"),
     jsonData: jsonb("json_data").notNull().$type<{ flags: string[] }>().default({ flags: [] }),
+    inviteLink: varchar("invite_link"),
+    exerciseNotice: text("exercise_notice"),
   },
   (table) => [
     index("index_companies_on_external_id").using("btree", table.externalId.asc().nullsLast().op("text_ops")),
+    uniqueIndex("index_companies_on_invite_link").using("btree", table.inviteLink.asc().nullsLast().op("text_ops")),
   ],
 );
 
@@ -1819,7 +1669,7 @@ export const users = pgTable(
     teamMember: boolean("team_member").notNull().default(false),
     sentInvalidTaxIdEmail: boolean("sent_invalid_tax_id_email").notNull().default(false),
     clerkId: varchar("clerk_id"),
-    signupInviteLinkId: bigint("signup_invite_link_id", { mode: "number" }),
+    otpSecretKey: varchar("otp_secret_key"),
   },
   (table) => [
     index("index_users_on_confirmation_token").using("btree", table.confirmationToken.asc().nullsLast().op("text_ops")),
@@ -1837,37 +1687,6 @@ export const users = pgTable(
       table.resetPasswordToken.asc().nullsLast().op("text_ops"),
     ),
     index("index_users_on_clerk_id").using("btree", table.clerkId.asc().nullsLast().op("text_ops")),
-    index("index_users_on_signup_invite_link_id").using(
-      "btree",
-      table.signupInviteLinkId.asc().nullsLast().op("int8_ops"),
-    ),
-  ],
-);
-
-export const companyInviteLinks = pgTable(
-  "company_invite_links",
-  {
-    id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
-    companyId: bigint("company_id", { mode: "bigint" }).notNull(),
-    documentTemplateId: bigint("document_template_id", { mode: "bigint" }),
-    token: varchar().notNull(),
-    createdAt: timestamp("created_at", { precision: 6, mode: "date" }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { precision: 6, mode: "date" })
-      .notNull()
-      .$onUpdate(() => new Date()),
-  },
-  (table) => [
-    uniqueIndex("idx_on_company_id_document_template_id_57bbad7c26").using(
-      "btree",
-      table.companyId.asc().nullsLast().op("int8_ops"),
-      table.documentTemplateId.asc().nullsLast().op("int8_ops"),
-    ),
-    index("index_company_invite_links_on_company_id").using("btree", table.companyId.asc().nullsLast().op("int8_ops")),
-    index("index_company_invite_links_on_document_template_id").using(
-      "btree",
-      table.documentTemplateId.asc().nullsLast().op("int8_ops"),
-    ),
-    uniqueIndex("index_company_invite_links_on_token").using("btree", table.token.asc().nullsLast().op("text_ops")),
   ],
 );
 
@@ -1964,7 +1783,6 @@ export const equityGrantsRelations = relations(equityGrants, ({ one, many }) => 
     references: [companyInvestors.id],
   }),
   documents: many(documents),
-  transactions: many(equityGrantTransactions),
   vestingEvents: many(vestingEvents),
   optionPool: one(optionPools, {
     fields: [equityGrants.optionPoolId],
@@ -1973,25 +1791,6 @@ export const equityGrantsRelations = relations(equityGrants, ({ one, many }) => 
   vestingSchedule: one(vestingSchedules, {
     fields: [equityGrants.vestingScheduleId],
     references: [vestingSchedules.id],
-  }),
-}));
-
-export const equityGrantTransactionsRelations = relations(equityGrantTransactions, ({ one }) => ({
-  equityGrant: one(equityGrants, {
-    fields: [equityGrantTransactions.equityGrantId],
-    references: [equityGrants.id],
-  }),
-  invoice: one(invoices, {
-    fields: [equityGrantTransactions.invoiceId],
-    references: [invoices.id],
-  }),
-  vestingEvent: one(vestingEvents, {
-    fields: [equityGrantTransactions.vestingEventId],
-    references: [vestingEvents.id],
-  }),
-  equityGrantExercise: one(equityGrantExercises, {
-    fields: [equityGrantTransactions.equityGrantExerciseId],
-    references: [equityGrantExercises.id],
   }),
 }));
 
@@ -2023,7 +1822,6 @@ export const invoicesRelations = relations(invoices, ({ one, many }) => ({
   approvals: many(invoiceApprovals),
   consolidatedInvoicesInvoices: many(consolidatedInvoicesInvoices),
   payments: many(payments),
-  equityGrantTransactions: many(equityGrantTransactions),
   lineItems: many(invoiceLineItems),
   expenses: many(invoiceExpenses),
 }));
@@ -2323,12 +2121,11 @@ export const companyInvestorsRelations = relations(companyInvestors, ({ one, man
   investorDividendRounds: many(investorDividendRounds),
 }));
 
-export const vestingEventsRelations = relations(vestingEvents, ({ one, many }) => ({
+export const vestingEventsRelations = relations(vestingEvents, ({ one }) => ({
   equityGrant: one(equityGrants, {
     fields: [vestingEvents.equityGrantId],
     references: [equityGrants.id],
   }),
-  equityGrantTransactions: many(equityGrantTransactions),
 }));
 
 export const vestingSchedulesRelations = relations(vestingSchedules, ({ many }) => ({
@@ -2409,7 +2206,6 @@ export const equityGrantExercisesRelations = relations(equityGrantExercises, ({ 
     references: [equityExerciseBankAccounts.id],
   }),
   exerciseRequests: many(equityGrantExerciseRequests),
-  equityGrantTransactions: many(equityGrantTransactions),
   equityGrants: many(equityGrants),
 }));
 

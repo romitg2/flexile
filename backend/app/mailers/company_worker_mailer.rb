@@ -20,6 +20,7 @@ class CompanyWorkerMailer < ApplicationMailer
     @equity_grant = EquityGrant.find(equity_grant_id)
     @company = @equity_grant.option_pool.company
     @user = @equity_grant.company_investor.user
+    @document = Document.equity_plan_contract.find_by(equity_grant: @equity_grant)
 
     mail(to: @user.email, reply_to: @company.email,
          subject: "🔴 Action needed: sign your Incentive Plan to receive stock options")
@@ -75,6 +76,17 @@ class CompanyWorkerMailer < ApplicationMailer
     user = @invoice.user
 
     mail(to: user.email, reply_to: company.email, subject: "🔴 Payment failed: re-enter your bank details")
+  end
+
+  def payment_failed_generic(payment_id, amount, currency)
+    @payment = Payment.find(payment_id)
+    @invoice = @payment.invoice
+    @currency = currency
+    @amount = amount
+    @invoice.company
+    user = @invoice.user
+
+    mail(to: user.email, cc: "support@flexile.com", subject: "🔴 Payment failed: Payment Failure for Invoice ##{@invoice.id}")
   end
 
   def equity_percent_selection(company_worker_id)

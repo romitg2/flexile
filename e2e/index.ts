@@ -1,5 +1,4 @@
 import { expect as baseExpect, type Locator, type Page } from "@playwright/test";
-import { clearClerkUser } from "@test/helpers/auth";
 import { test as baseTest } from "next/experimental/testmode/playwright.js";
 import type { CreateEmailOptions } from "resend";
 import { parseHTML } from "zeed-dom";
@@ -28,7 +27,6 @@ export const test = baseTest.extend<{
   setup: [
     async ({}, use) => {
       await use(undefined);
-      await clearClerkUser();
     },
     { auto: true },
   ],
@@ -58,9 +56,10 @@ export const expect = baseExpect.extend({
 
 export const withinModal = async (
   callback: (modal: Locator) => Promise<void>,
-  { page, title }: { page: Page; title?: string },
+  { page, title, assertClosed = true }: { page: Page; title?: string | RegExp; assertClosed?: boolean },
 ) => {
   const modal = title ? page.getByRole("dialog", { name: title }) : page.getByRole("dialog");
-  await modal.waitFor({ state: "visible" });
+  await expect(modal).toBeVisible();
   await callback(modal);
+  if (assertClosed) await expect(modal).not.toBeVisible();
 };

@@ -1,8 +1,11 @@
 "use client";
-import { CircleAlert, CircleCheck, Info, Pencil } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { CircleAlert, CircleCheck, Info, Pencil, Plus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import NewEquityGrantModal from "@/app/(dashboard)/equity/grants/NewEquityGrantModal";
+import { useExerciseDataConfig } from "@/app/(dashboard)/equity/options";
 import { DashboardHeader } from "@/components/DashboardHeader";
 import DataTable, { createColumnHelper, useTable } from "@/components/DataTable";
 import { linkClasses } from "@/components/Link";
@@ -19,19 +22,22 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { DocumentTemplateType } from "@/db/enums";
-import { useCurrentCompany } from "@/global";
+import { useCurrentCompany, useCurrentUser } from "@/global";
 import type { RouterOutput } from "@/trpc";
 import { trpc } from "@/trpc/client";
 import { formatMoney } from "@/utils/formatMoney";
 import { formatDate } from "@/utils/time";
+import { useIsMobile } from "@/utils/use-mobile";
 
 type EquityGrant = RouterOutput["equityGrants"]["list"][number];
 export default function GrantsPage() {
+  const isMobile = useIsMobile();
   const router = useRouter();
+  const user = useCurrentUser();
   const company = useCurrentCompany();
   const { data = [], isLoading, refetch } = trpc.equityGrants.list.useQuery({ companyId: company.id });
   const [cancellingGrantId, setCancellingGrantId] = useState<string | null>(null);
+  const [showNewGrantModal, setShowNewGrantModal] = useState(false);
   const cancellingGrant = data.find((grant) => grant.id === cancellingGrantId);
   const cancelGrant = trpc.equityGrants.cancel.useMutation({
     onSuccess: () => {
@@ -40,6 +46,11 @@ export default function GrantsPage() {
     },
   });
 
+  const exerciseDataConfig = useExerciseDataConfig();
+  const { data: exerciseData } = useQuery({
+    ...exerciseDataConfig,
+    enabled: exerciseDataConfig.enabled || !!user.roles.administrator,
+  });
   const columnHelper = createColumnHelper<EquityGrant>();
   const columns = useMemo(
     () => [
@@ -62,7 +73,7 @@ export default function GrantsPage() {
         header: "Actions",
         cell: (info) =>
           info.row.original.unvestedShares > 0 ? (
-            <Button variant="critical" onClick={() => setCancellingGrantId(info.row.original.id)}>
+            <Button variant="critical" size="small" onClick={() => setCancellingGrantId(info.row.original.id)}>
               Cancel
             </Button>
           ) : null,
@@ -72,36 +83,34 @@ export default function GrantsPage() {
   );
 
   const table = useTable({ columns, data });
-  const [equityPlanContractTemplates] = trpc.documents.templates.list.useSuspenseQuery({
-    companyId: company.id,
-    type: DocumentTemplateType.EquityPlanContract,
-    signable: true,
-  });
 
   return (
     <>
       <DashboardHeader
         title="Equity grants"
         headerActions={
-          equityPlanContractTemplates.length > 0 ? (
-            <Button asChild>
-              <Link href={`/companies/${company.id}/administrator/equity_grants/new`}>
-                <Pencil className="size-4" />
-                New option grant
-              </Link>
+          isMobile ? (
+            <Button variant="floating-action" onClick={() => setShowNewGrantModal(true)}>
+              <Plus />
             </Button>
-          ) : null
+          ) : (
+            <Button size="small" onClick={() => setShowNewGrantModal(true)}>
+              <Pencil className="size-4" />
+              New grant
+            </Button>
+          )
         }
       />
 
-      {equityPlanContractTemplates.length === 0 ? (
-        <Alert>
+      {exerciseData && !exerciseData.exercise_notice ? (
+        <Alert className="mx-4">
           <Info />
           <AlertDescription>
-            <Link href="/documents" className={linkClasses}>
-              Create equity plan contract templates
+            Please{" "}
+            <Link href="/settings/administrator/equity" className={linkClasses}>
+              add an exercise notice
             </Link>{" "}
-            before adding new option grants.
+            so investors can exercise their options.
           </AlertDescription>
         </Alert>
       ) : null}
@@ -110,7 +119,9 @@ export default function GrantsPage() {
       ) : data.length > 0 ? (
         <DataTable table={table} onRowClicked={(row) => router.push(`/people/${row.user.id}`)} />
       ) : (
-        <Placeholder icon={CircleCheck}>There are no option grants right now.</Placeholder>
+        <div className="mx-4">
+          <Placeholder icon={CircleCheck}>There are no option grants right now.</Placeholder>
+        </div>
       )}
       <Dialog open={!!cancellingGrantId} onOpenChange={() => setCancellingGrantId(null)}>
         <DialogContent>
@@ -150,11 +161,12 @@ export default function GrantsPage() {
                 </AlertDescription>
               </Alert>
               <DialogFooter>
-                <Button variant="outline" onClick={() => setCancellingGrantId(null)}>
+                <Button variant="outline" size="small" onClick={() => setCancellingGrantId(null)}>
                   Cancel
                 </Button>
                 <MutationButton
                   idleVariant="critical"
+                  size="small"
                   mutation={cancelGrant}
                   param={{ companyId: company.id, id: cancellingGrant.id, reason: "Cancelled by admin" }}
                 >
@@ -165,6 +177,7 @@ export default function GrantsPage() {
           ) : null}
         </DialogContent>
       </Dialog>
+      <NewEquityGrantModal open={showNewGrantModal} onOpenChange={setShowNewGrantModal} />
     </>
   );
 }

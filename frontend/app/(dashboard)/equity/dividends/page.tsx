@@ -1,8 +1,9 @@
 "use client";
-import { skipToken, useMutation, useQuery } from "@tanstack/react-query";
+import { skipToken, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CircleCheck, Info } from "lucide-react";
 import Link from "next/link";
-import React, { useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import React, { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 import DividendStatusIndicator from "@/app/(dashboard)/equity/DividendStatusIndicator";
 import { DashboardHeader } from "@/components/DashboardHeader";
@@ -10,7 +11,7 @@ import DataTable, { createColumnHelper, useTable } from "@/components/DataTable"
 import { linkClasses } from "@/components/Link";
 import MutationButton from "@/components/MutationButton";
 import Placeholder from "@/components/Placeholder";
-import RichText from "@/components/RichText";
+import SignForm from "@/components/SignForm";
 import TableSkeleton from "@/components/TableSkeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Avatar, AvatarImage } from "@/components/ui/avatar";
@@ -25,12 +26,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
-import { useCurrentCompany, useCurrentUser } from "@/global";
+import { useCurrentCompany, useCurrentUser, useUserStore } from "@/global";
 import type { RouterOutput } from "@/trpc";
 import { trpc } from "@/trpc/client";
 import { formatMoneyFromCents } from "@/utils/formatMoney";
 import { request } from "@/utils/request";
-import { company_dividend_path, sign_company_dividend_path } from "@/utils/routes";
+import { company_dividend_path, company_switch_path, sign_company_dividend_path } from "@/utils/routes";
 import { formatDate } from "@/utils/time";
 
 type Dividend = RouterOutput["dividends"]["list"][number];
@@ -38,6 +39,39 @@ const columnHelper = createColumnHelper<Dividend>();
 export default function Dividends() {
   const company = useCurrentCompany();
   const user = useCurrentUser();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
+
+  const companyIdParam = searchParams.get("company_id");
+
+  const switchCompany = async (companyId: string) => {
+    useUserStore.setState((state) => ({ ...state, pending: true }));
+    try {
+      await request({
+        method: "POST",
+        url: company_switch_path(companyId),
+        accept: "json",
+      });
+      await queryClient.resetQueries({ queryKey: ["currentUser", user.email] });
+      router.replace("/equity/dividends");
+    } finally {
+      useUserStore.setState((state) => ({ ...state, pending: false }));
+    }
+  };
+
+  useEffect(() => {
+    if (!companyIdParam) return;
+    if (companyIdParam !== company.externalId) {
+      const targetCompany = user.companies.find((c) => c.externalId === companyIdParam);
+      if (targetCompany && targetCompany.id !== company.id) {
+        void switchCompany(targetCompany.id);
+      } else {
+        router.replace("/equity/dividends");
+      }
+    }
+  }, [companyIdParam, company.externalId, company.id, user.companies, user.email]);
+
   const {
     data = [],
     refetch,
@@ -97,6 +131,12 @@ export default function Dividends() {
         value ? "Return of capital" : "Dividend",
       ),
       columnHelper.simple("numberOfShares", "Shares held", (value) => value?.toLocaleString() ?? "N/A", "numeric"),
+      columnHelper.simple(
+        "investmentAmountCents",
+        "Investment amount",
+        (value) => (value ? formatMoneyFromCents(value) : "N/A"),
+        "numeric",
+      ),
       columnHelper.simple("totalAmountInCents", "Gross amount", (value) => formatMoneyFromCents(value), "numeric"),
       columnHelper.simple("withheldTaxCents", "Withheld taxes", (value) => formatMoneyFromCents(value ?? 0), "numeric"),
       columnHelper.simple("netAmountInCents", "Net amount", (value) => formatMoneyFromCents(value ?? 0), "numeric"),
@@ -126,7 +166,7 @@ export default function Dividends() {
       <DashboardHeader title="Dividends" />
 
       {!hasLegalDetails ? (
-        <Alert>
+        <Alert className="mx-4">
           <Info />
           <AlertDescription>
             Please{" "}
@@ -137,7 +177,7 @@ export default function Dividends() {
           </AlertDescription>
         </Alert>
       ) : !user.hasPayoutMethodForDividends ? (
-        <Alert>
+        <Alert className="mx-4">
           <Info />
           <AlertDescription>
             Please{" "}
@@ -153,7 +193,9 @@ export default function Dividends() {
       ) : data.length > 0 ? (
         <DataTable table={table} />
       ) : (
-        <Placeholder icon={CircleCheck}>You have not been issued any dividends yet.</Placeholder>
+        <div className="mx-4">
+          <Placeholder icon={CircleCheck}>You have not been issued any dividends yet.</Placeholder>
+        </div>
       )}
       <Dialog open={!!dividendData} onOpenChange={() => setSigningDividend(null)}>
         <DialogContent>
@@ -167,31 +209,13 @@ export default function Dividends() {
                     conditions for the return of capital.
                   </DialogDescription>
                 </DialogHeader>
-                <div className="border-muted my-2 max-h-100 overflow-y-auto rounded-md border px-8 py-4">
-                  <RichText
-                    content={dividendData.release_document
-                      .replaceAll("{{investor}}", user.legalName)
-                      .replaceAll("{{amount}}", formatMoneyFromCents(dividendData.total_amount_in_cents))}
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <h3>Your signature</h3>
-                  {signingDividend.state === "signing" ? (
-                    <Button
-                      className="border-muted w-full hover:border-current"
-                      variant="dashed"
-                      onClick={() => setSigningDividend({ ...signingDividend, state: "signed" })}
-                    >
-                      Add your signature
-                    </Button>
-                  ) : (
-                    <div className="font-signature border-b text-xl">{user.legalName}</div>
-                  )}
-                  <div className="text-muted-foreground text-xs">
-                    By clicking the button above, you agree to using an electronic representation of your signature for
-                    all purposes within Flexile, just the same as a pen-and-paper signature.
-                  </div>
-                </div>
+                <SignForm
+                  content={dividendData.release_document
+                    .replaceAll("{{investor}}", user.legalName)
+                    .replaceAll("{{amount}}", formatMoneyFromCents(dividendData.total_amount_in_cents))}
+                  signed={signingDividend.state === "signed"}
+                  onSign={() => setSigningDividend({ ...signingDividend, state: "signed" })}
+                />
                 <DialogFooter>
                   <MutationButton
                     mutation={signDividend}
@@ -242,7 +266,7 @@ export default function Dividends() {
                   </div>
                 </div>
                 <DialogFooter>
-                  <Button onClick={() => setSigningDividend({ id: signingDividend.id, state: "signing" })}>
+                  <Button size="small" onClick={() => setSigningDividend({ id: signingDividend.id, state: "signing" })}>
                     Review and sign agreement
                   </Button>
                 </DialogFooter>
