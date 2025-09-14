@@ -55,6 +55,8 @@ export default function QuickbooksRow() {
     },
   });
 
+  const { isDirty } = form.formState;
+
   const connectMutation = useMutation({
     mutationFn: async () => {
       const authUrl = await utils.quickbooks.getAuthUrl.fetch({ companyId: company.id });
@@ -227,6 +229,7 @@ export default function QuickbooksRow() {
                 type="submit"
                 loadingText="Saving..."
                 successText="Saved!"
+                disabled={!isDirty}
               >
                 Save
               </MutationStatusButton>

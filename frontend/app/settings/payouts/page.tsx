@@ -58,6 +58,7 @@ const EquitySection = () => {
     defaultValues: { equityPercentage: worker.equityPercentage },
     resolver: zodResolver(equityFormSchema),
   });
+  const { isDirty } = form.formState;
   const payRateInSubunits = worker.payRateInSubunits ?? 0;
   const equityPercentage = form.watch("equityPercentage");
 
@@ -133,6 +134,7 @@ const EquitySection = () => {
               loadingText="Saving..."
               successText="Saved!"
               className="justify-self-end"
+              disabled={!isDirty}
             >
               Save changes
             </MutationStatusButton>
@@ -173,6 +175,8 @@ const DividendSection = () => {
     },
     resolver: zodResolver(dividendsFormSchema),
   });
+
+  const { isDirty } = form.formState;
 
   const saveMutation = useMutation({
     mutationFn: async (values: z.infer<typeof dividendsFormSchema>) => {
@@ -228,6 +232,7 @@ const DividendSection = () => {
               loadingText="Saving..."
               successText="Saved!"
               className="justify-self-end"
+              disabled={!isDirty}
             >
               Save changes
             </MutationStatusButton>

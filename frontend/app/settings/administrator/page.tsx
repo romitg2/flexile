@@ -38,6 +38,8 @@ export default function SettingsPage() {
     },
   });
 
+  const { isDirty } = form.formState;
+
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const logoUrl = useMemo(
     () => (logoFile ? URL.createObjectURL(logoFile) : (company.logo_url ?? defaultLogo.src)),
@@ -159,6 +161,7 @@ export default function SettingsPage() {
           </div>
 
           <MutationStatusButton
+            disabled={!isDirty}
             mutation={saveMutation}
             type="submit"
             successText="Changes saved"

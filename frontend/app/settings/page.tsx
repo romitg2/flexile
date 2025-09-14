@@ -45,6 +45,8 @@ const DetailsSection = () => {
     },
   });
 
+  const { isDirty } = form.formState;
+
   const saveMutation = useMutation({
     mutationFn: async (values: { email: string; preferredName: string }) => {
       const response = await request({
@@ -93,6 +95,7 @@ const DetailsSection = () => {
         />
         {saveMutation.isError ? <p className="text-red-500">{saveMutation.error.message}</p> : null}
         <MutationStatusButton
+          disabled={!isDirty}
           className="w-fit"
           type="submit"
           mutation={saveMutation}

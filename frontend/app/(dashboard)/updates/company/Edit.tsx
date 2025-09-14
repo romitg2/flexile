@@ -44,6 +44,7 @@ const Edit = ({ update }: { update?: CompanyUpdate }) => {
     },
   });
 
+  const { isDirty } = form.formState;
   const [modalOpen, setModalOpen] = useState(false);
   const navigatedFromNewPreview = sessionStorage.getItem("navigated-from-new-preview");
   const [viewPreview, setViewPreview] = useState(!!navigatedFromNewPreview);
@@ -109,6 +110,7 @@ const Edit = ({ update }: { update?: CompanyUpdate }) => {
                     mutation={saveMutation}
                     idleVariant="outline"
                     loadingText="Saving..."
+                    disabled={!isDirty}
                     onClick={() =>
                       void form.handleSubmit((values) => saveMutation.mutateAsync({ values, preview: true }))()
                     }
@@ -116,7 +118,7 @@ const Edit = ({ update }: { update?: CompanyUpdate }) => {
                     <FileScan className="size-4" />
                     Preview
                   </MutationStatusButton>
-                  <Button type="submit">
+                  <Button type="submit" disabled={!isDirty}>
                     <EnvelopeIcon className="size-4" />
                     Publish
                   </Button>

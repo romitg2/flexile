@@ -398,6 +398,7 @@ const DetailsTab = ({
     defaultValues: contractor,
     disabled: !!contractor.endedAt,
   });
+  const { isDirty } = form.formState;
   const payRateInSubunits = form.watch("payRateInSubunits");
   const trpcUtils = trpc.useUtils();
   const updateContractor = trpc.contractors.update.useMutation({
@@ -473,6 +474,7 @@ const DetailsTab = ({
               mutation={updateContractor}
               loadingText="Saving..."
               className="justify-self-end"
+              disabled={!isDirty}
             >
               Save changes
             </MutationStatusButton>
