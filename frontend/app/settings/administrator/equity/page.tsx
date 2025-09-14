@@ -58,14 +58,17 @@ export default function Equity() {
     },
   });
 
-  const submit = form.handleSubmit((values) =>
-    updateSettings.mutateAsync({
+  const { isDirty } = form.formState;
+
+  const submit = form.handleSubmit(async (values) => {
+    await updateSettings.mutateAsync({
       companyId: company.id,
       sharePriceInUsd: values.sharePriceInUsd.toString(),
       fmvPerShareInUsd: values.fmvPerShareInUsd.toString(),
       conversionSharePriceUsd: values.conversionSharePriceUsd.toString(),
-    }),
-  );
+    });
+    form.reset(values);
+  });
 
   return (
     <div className="grid gap-8">
@@ -143,6 +146,7 @@ export default function Equity() {
                 )}
               />
               <MutationStatusButton
+                disabled={!isDirty}
                 type="submit"
                 className="w-fit"
                 mutation={updateSettings}
