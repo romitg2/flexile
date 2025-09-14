@@ -8,11 +8,8 @@ end
 require "sidekiq/cron/web"
 
 admin_constraint = lambda do |request|
-  request.env["clerk"].user? && User.find_by(clerk_id: request.env["clerk"].user_id)&.team_member?
-end
-
-api_domain_constraint = lambda do |request|
-  Rails.env.test? || API_DOMAIN == request.host
+  user = JwtService.user_from_request(request)
+  user&.team_member?
 end
 
 Rails.application.routes.draw do
@@ -57,16 +54,11 @@ Rails.application.routes.draw do
     end
 
     resources :stripe, controller: :stripe, only: [:create]
-    resources :quickbooks, controller: :quickbooks, only: [:create]
   end
 
   scope module: :api, as: :api do
-    constraints api_domain_constraint do
-      namespace :v1 do
-      end
-      namespace :helper do
-        resource :users, only: :show
-      end
+    namespace :helper do
+      resource :users, only: :show
     end
   end
 

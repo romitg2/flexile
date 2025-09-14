@@ -13,8 +13,6 @@ gem "sprockets-rails", "~> 3.4"
 # Use pg as the database for Active Record
 gem "pg", "~> 1.4"
 
-# Use PostgreSQL's full text search
-gem "pg_search", "~> 2.3"
 
 # Use the Puma web server [https://github.com/puma/puma]
 gem "puma", "~> 6.3"
@@ -38,7 +36,6 @@ group :development, :test do
   gem "factory_bot_rails", "~> 6.4.0" # Remove the patch version after a new version fixes https://github.com/thoughtbot/factory_bot_rails/issues/433
   gem "pry", "~> 0.14"
   gem "rspec-rails", "~> 7.0"
-  gem "knapsack_pro", "~> 8.0"
 end
 
 group :development do
@@ -153,6 +150,8 @@ gem "resend", "~> 0.19.0"
 
 gem "pundit", "~> 2.4"
 
-gem "clerk-sdk-ruby", "~> 4.0", require: "clerk"
+
 
 gem "rubyzip", "~> 2.4"
+
+gem "active_model_otp", "~> 2.3"

@@ -36,6 +36,10 @@ const DetailsModal = ({
 }) => {
   const company = useCurrentCompany();
   const [user] = trpc.users.get.useSuspenseQuery({ companyId: company.id, id: userId });
+  const { data: fullEquityGrant } = trpc.equityGrants.get.useQuery({ companyId: company.id, id: equityGrant.id });
+
+  const processedVestingEvents =
+    fullEquityGrant?.vestingEvents.filter((event) => event.processedAt && !event.cancelledAt) ?? [];
 
   return (
     <Sheet open onOpenChange={onClose}>
@@ -122,6 +126,18 @@ const DetailsModal = ({
             }
           />
           <Item label="Role type" value={relationshipDisplayNames[equityGrant.issueDateRelationship]} />
+
+          {processedVestingEvents.length > 0 ? (
+            <>
+              <Separator />
+              <h3 className="text-md px-6 font-medium">Vesting events</h3>
+              {processedVestingEvents.map((event) => (
+                <div key={event.id}>
+                  <Item label={formatDate(event.vestingDate)} value={`${event.vestedShares.toLocaleString()} shares`} />
+                </div>
+              ))}
+            </>
+          ) : null}
         </div>
         {company.flags.includes("option_exercising") &&
         equityGrant.vestedShares > 0 &&
@@ -129,7 +145,9 @@ const DetailsModal = ({
         canExercise ? (
           <SheetFooter>
             <div className="grid gap-4">
-              <Button onClick={onUpdateExercise}>Exercise options</Button>
+              <Button size="small" onClick={onUpdateExercise}>
+                Exercise options
+              </Button>
               <div className="text-xs">You can choose how many options to exercise in the next step.</div>
             </div>
           </SheetFooter>

@@ -59,8 +59,7 @@ test.describe("invoice creation", () => {
       { year: 2021 },
     );
 
-    await login(page, contractorUser);
-    await page.goto("/invoices/new");
+    await login(page, contractorUser, "/invoices/new");
 
     await page.getByPlaceholder("Description").fill("I worked on invoices");
     await page.getByLabel("Hours").fill("03:25");
@@ -69,9 +68,7 @@ test.describe("invoice creation", () => {
     await expect(page.getByText("Net amount in cash$60")).toBeVisible();
 
     await fillDatePicker(page, "Date", "08/08/2021");
-    await page.waitForTimeout(300);
     await page.getByLabel("Hours / Qty").fill("100:00");
-    await page.waitForTimeout(300);
     await page.getByPlaceholder("Description").fill("I worked on invoices");
 
     await expect(page.getByText("Total services$6,000")).toBeVisible();
@@ -98,12 +95,10 @@ test.describe("invoice creation", () => {
       .set({ startedAt: subDays(new Date(), 365), endedAt: subDays(new Date(), 100) })
       .where(eq(companyContractors.id, companyContractor.id));
 
-    await login(page, contractorUser);
-    await page.goto("/invoices/new");
+    await login(page, contractorUser, "/invoices/new");
     await page.getByPlaceholder("Description").fill("item name");
     await page.getByLabel("Hours / Qty").fill("01:00");
     await page.getByPlaceholder("Enter notes about your").fill("sent as alumni");
-    await page.waitForTimeout(100);
     await page.getByRole("button", { name: "Send invoice" }).click();
     await expect(page.getByRole("cell", { name: "Awaiting approval (0/2)" })).toBeVisible();
   });
@@ -111,8 +106,7 @@ test.describe("invoice creation", () => {
   test("does not show equity split if equity compensation is disabled", async ({ page }) => {
     await db.update(companies).set({ equityEnabled: false }).where(eq(companies.id, company.id));
 
-    await login(page, contractorUser);
-    await page.goto("/invoices/new");
+    await login(page, contractorUser, "/invoices/new");
     await expect(page.getByText("Total")).toBeVisible();
     await expect(page.getByText("Swapped for equity")).not.toBeVisible();
   });
@@ -122,8 +116,7 @@ test.describe("invoice creation", () => {
       companyId: company.id,
       name: "Office Supplies",
     });
-    await login(page, contractorUser);
-    await page.goto("/invoices/new");
+    await login(page, contractorUser, "/invoices/new");
 
     await page.getByRole("button", { name: "Add expense" }).click();
     await page.locator('input[type="file"]').setInputFiles({
@@ -156,8 +149,7 @@ test.describe("invoice creation", () => {
       { companyId: company.id, name: "Office Supplies" },
       { companyId: company.id, name: "Travel" },
     ]);
-    await login(page, contractorUser);
-    await page.goto("/invoices/new");
+    await login(page, contractorUser, "/invoices/new");
 
     await page.getByRole("button", { name: "Add expense" }).click();
     await page.locator('input[accept="application/pdf, image/*"]').setInputFiles({
@@ -229,8 +221,7 @@ test.describe("invoice creation", () => {
   });
 
   test("shows alert when billing above default pay rate", async ({ page }) => {
-    await login(page, contractorUser);
-    await page.goto("/invoices/new");
+    await login(page, contractorUser, "/invoices/new");
 
     await page.getByLabel("Hours").fill("2:00");
     await page.getByPlaceholder("Description").fill("Premium work");
@@ -253,8 +244,7 @@ test.describe("invoice creation", () => {
   });
 
   test("supports decimal quantities", async ({ page }) => {
-    await login(page, contractorUser);
-    await page.goto("/invoices/new");
+    await login(page, contractorUser, "/invoices/new");
 
     await page.getByLabel("Hours").fill("2.5");
     await page.getByPlaceholder("Description").fill("Development work with decimal quantities");

@@ -1,6 +1,6 @@
-import { Bars2Icon, BoldIcon, ItalicIcon, LinkIcon, ListBulletIcon, UnderlineIcon } from "@heroicons/react/24/outline";
 import type { Content } from "@tiptap/core";
 import { EditorContent, isList, useEditor } from "@tiptap/react";
+import { Bold, Heading, Italic, Link, List, Underline } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import { linkClasses } from "@/components/Link";
 import { Button } from "@/components/ui/button";
@@ -10,11 +10,15 @@ import { Label } from "@/components/ui/label";
 import { cn } from "@/utils";
 import { richTextExtensions } from "@/utils/richText";
 
-const RichText = ({ content }: { content: Content }) => {
+const RichText = ({ content, className }: { content: Content; className?: string }) => {
   const editor = useEditor({
     extensions: richTextExtensions,
     content,
-    editorProps: { attributes: { class: "prose" } },
+    editorProps: {
+      attributes: {
+        class: cn(className, "prose"),
+      },
+    },
     editable: false,
     immediatelyRender: false,
   });
@@ -30,30 +34,26 @@ const RichText = ({ content }: { content: Content }) => {
 
 export const Editor = ({
   value,
-  invalid,
   onChange,
   className,
+  id,
+  ...props
 }: {
-  value: string | null;
-  invalid?: boolean;
-  onChange: (value: string) => void;
+  value: string | null | undefined;
+  onChange: (value: string | null) => void;
   className?: string;
-}) => {
+} & React.ComponentProps<"div">) => {
   const [addingLink, setAddingLink] = useState<{ url: string } | null>(null);
-  const id = React.useId();
 
   const editor = useEditor({
     extensions: richTextExtensions,
-    content: value,
+    content: value ?? "",
     editable: true,
-    onUpdate: ({ editor }) => onChange(editor.getHTML()),
+    onUpdate: ({ editor }) => onChange(editor.isEmpty ? null : editor.getHTML()),
     editorProps: {
       attributes: {
-        id,
-        class: cn(className, "prose p-4 max-h-96 overflow-y-auto max-w-full rounded-b-md", {
-          "outline-red": invalid,
-        }),
-        "aria-invalid": String(invalid),
+        ...(id ? { id } : {}),
+        class: cn(className, "prose p-4 min-h-60 max-h-96 overflow-y-auto max-w-full rounded-b-md outline-none"),
       },
     },
     immediatelyRender: false,
@@ -61,24 +61,24 @@ export const Editor = ({
 
   useEffect(() => {
     if (editor && value !== editor.getHTML()) {
-      editor.commands.setContent(value, false);
+      editor.commands.setContent(value ?? "", false);
     }
   }, [value, editor]);
 
   const currentLink: unknown = editor?.getAttributes("link").href;
 
   const toolbarItems = [
-    { label: "Bold", name: "bold", icon: BoldIcon },
-    { label: "Italic", name: "italic", icon: ItalicIcon },
-    { label: "Underline", name: "underline", icon: UnderlineIcon },
-    { label: "Heading", name: "heading", attributes: { level: 2 }, icon: Bars2Icon },
+    { label: "Bold", name: "bold", icon: Bold },
+    { label: "Italic", name: "italic", icon: Italic },
+    { label: "Underline", name: "underline", icon: Underline },
+    { label: "Heading", name: "heading", attributes: { level: 2 }, icon: Heading },
     {
       label: "Link",
       name: "link",
-      icon: LinkIcon,
+      icon: Link,
       onClick: () => setAddingLink({ url: typeof currentLink === "string" ? currentLink : "" }),
     },
-    { label: "Bullet list", name: "bulletList", icon: ListBulletIcon },
+    { label: "Bullet list", name: "bulletList", icon: List },
   ];
   const onToolbarClick = (item: (typeof toolbarItems)[number]) => {
     if (!editor) return;
@@ -92,9 +92,30 @@ export const Editor = ({
     commands.run();
   };
 
+  const handleInsertLink = () => {
+    if (!addingLink?.url) return;
+    editor?.chain().focus().extendMarkRange("link").setLink({ href: addingLink.url }).run();
+    setAddingLink(null);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleInsertLink();
+    }
+  };
+
   return (
-    <div className={cn("border-input rounded-md border bg-transparent", invalid ? "border-destructive" : "")}>
-      <div className={cn("flex border-b", invalid ? "border-destructive" : "border-input")}>
+    <div
+      {...props}
+      className={cn(
+        "group border-input rounded-md border bg-transparent transition-[color,box-shadow] outline-none",
+        "focus-within:ring-ring/15 focus-within:border-gray-300 focus-within:ring-[3px]",
+        "aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
+        className,
+      )}
+    >
+      <div className="border-input group-aria-invalid:border-destructive flex border-b">
         {toolbarItems.map((item) => (
           <button
             type="button"
@@ -120,6 +141,7 @@ export const Editor = ({
               id="link-url"
               value={addingLink?.url ?? ""}
               onChange={(e) => setAddingLink({ url: e.target.value })}
+              onKeyDown={handleKeyDown}
               type="url"
               placeholder="https://example.com"
               required
@@ -136,14 +158,7 @@ export const Editor = ({
             >
               {currentLink ? "Unlink" : "Cancel"}
             </Button>
-            <Button
-              type="submit"
-              onClick={() => {
-                if (!addingLink?.url) return;
-                editor?.chain().focus().extendMarkRange("link").setLink({ href: addingLink.url }).run();
-                setAddingLink(null);
-              }}
-            >
+            <Button type="submit" onClick={handleInsertLink}>
               Insert
             </Button>
           </DialogFooter>

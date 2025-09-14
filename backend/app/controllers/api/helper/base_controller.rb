@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class Api::Helper::BaseController < Api::BaseController
+  skip_before_action :verify_api_token
+  skip_before_action :authenticate_with_jwt
   before_action :authorize!
 
   HMAC_EXPIRATION = 1.minute
@@ -14,7 +16,7 @@ class Api::Helper::BaseController < Api::BaseController
 
       hmac = Base64.decode64(request.authorization.split(" ").last)
       expected_hmac = OpenSSL::HMAC.digest(OpenSSL::Digest.new("sha256"),
-                                           GlobalConfig.dig("helper", "secret_key"),
+                                           GlobalConfig.get("HELPER_HMAC_SECRET"),
                                            request.query_string)
       unless ActiveSupport::SecurityUtils.secure_compare(expected_hmac, hmac)
         return render json: { success: false, message: "Authorization is invalid" }, status: :unauthorized

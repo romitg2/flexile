@@ -1,4 +1,3 @@
-import { clerk } from "@clerk/testing/playwright";
 import { db } from "@test/db";
 import { companiesFactory } from "@test/factories/companies";
 import { companyContractorsFactory } from "@test/factories/companyContractors";
@@ -6,7 +5,7 @@ import { companyInvestorsFactory } from "@test/factories/companyInvestors";
 import { equityGrantsFactory } from "@test/factories/equityGrants";
 import { invoicesFactory } from "@test/factories/invoices";
 import { usersFactory } from "@test/factories/users";
-import { login } from "@test/helpers/auth";
+import { login, logout } from "@test/helpers/auth";
 import { findRequiredTableRow } from "@test/helpers/matchers";
 import { expect, test, withinModal } from "@test/index";
 import { and, eq } from "drizzle-orm";
@@ -39,9 +38,8 @@ test.describe("One-off payments", () => {
 
   test.describe("admin creates a payment", () => {
     test("allows admin to create a one-off payment for a contractor without equity", async ({ page, sentEmails }) => {
-      await login(page, adminUser);
+      await login(page, adminUser, `/people/${workerUser.externalId}?tab=invoices`);
 
-      await page.goto(`/people/${workerUser.externalId}?tab=invoices`);
       await page.getByRole("button", { name: "Issue payment" }).click();
 
       await withinModal(
@@ -52,17 +50,16 @@ test.describe("One-off payments", () => {
         },
         { page },
       );
-      await expect(page.getByRole("dialog")).not.toBeVisible();
 
       const invoice = await db.query.invoices.findFirst({
         where: and(eq(invoices.invoiceNumber, "O-0001"), eq(invoices.companyId, company.id)),
       });
       expect(invoice).toEqual(
         expect.objectContaining({
-          totalAmountInUsdCents: 215430n,
+          totalAmountInUsdCents: BigInt(215430),
           equityPercentage: 0,
-          cashAmountInCents: 215430n,
-          equityAmountInCents: 0n,
+          cashAmountInCents: BigInt(215430),
+          equityAmountInCents: BigInt(0),
           equityAmountInOptions: 0,
           minAllowedEquityPercentage: null,
           maxAllowedEquityPercentage: null,
@@ -101,9 +98,7 @@ test.describe("One-off payments", () => {
         await db.update(companies).set({ fmvPerShareInUsd: null }).where(eq(companies.id, company.id));
         await db.delete(equityGrants).where(eq(equityGrants.companyInvestorId, companyInvestor.id));
 
-        await login(page, adminUser);
-
-        await page.goto(`/people/${workerUser.externalId}?tab=invoices`);
+        await login(page, adminUser, `/people/${workerUser.externalId}?tab=invoices`);
         await page.getByRole("button", { name: "Issue payment" }).click();
 
         await withinModal(
@@ -111,18 +106,19 @@ test.describe("One-off payments", () => {
             await modal.getByLabel("Amount").fill("50000.00");
             await modal.getByLabel("What is this for?").fill("Bonus payment for Q4");
             await modal.getByLabel("Equity percentage", { exact: true }).fill("80");
-            await modal.getByRole("button", { name: "Issue payment" }).click();
-            await page.waitForLoadState("networkidle");
+            await Promise.all([
+              page.waitForResponse((r) => r.url().includes("invoices.createAsAdmin") && r.status() === 400),
+              modal.getByRole("button", { name: "Issue payment" }).click(),
+            ]);
             await expect(modal.getByText("Recipient has insufficient unvested equity")).toBeVisible();
           },
-          { page },
+          { page, assertClosed: false },
         );
       });
 
       test("with a fixed equity percentage", async ({ page, sentEmails }) => {
-        await login(page, adminUser);
+        await login(page, adminUser, `/people/${workerUser.externalId}?tab=invoices`);
 
-        await page.goto(`/people/${workerUser.externalId}?tab=invoices`);
         await page.getByRole("button", { name: "Issue payment" }).click();
 
         await withinModal(
@@ -134,17 +130,16 @@ test.describe("One-off payments", () => {
           },
           { page },
         );
-        await expect(page.getByRole("dialog")).not.toBeVisible();
 
         const invoice = await db.query.invoices.findFirst({
           where: and(eq(invoices.invoiceNumber, "O-0001"), eq(invoices.companyId, company.id)),
         });
         expect(invoice).toEqual(
           expect.objectContaining({
-            totalAmountInUsdCents: 50000n,
+            totalAmountInUsdCents: BigInt(50000),
             equityPercentage: 10,
-            cashAmountInCents: 45000n,
-            equityAmountInCents: 5000n,
+            cashAmountInCents: BigInt(45000),
+            equityAmountInCents: BigInt(5000),
             equityAmountInOptions: 5,
             minAllowedEquityPercentage: null,
             maxAllowedEquityPercentage: null,
@@ -161,9 +156,8 @@ test.describe("One-off payments", () => {
       });
 
       test("with an allowed equity percentage range", async ({ page, sentEmails }) => {
-        await login(page, adminUser);
+        await login(page, adminUser, `/people/${workerUser.externalId}?tab=invoices`);
 
-        await page.goto(`/people/${workerUser.externalId}?tab=invoices`);
         await page.getByRole("button", { name: "Issue payment" }).click();
 
         await withinModal(
@@ -206,17 +200,16 @@ test.describe("One-off payments", () => {
           },
           { page },
         );
-        await expect(page.getByRole("dialog")).not.toBeVisible();
 
         const invoice = await db.query.invoices.findFirst({
           where: and(eq(invoices.invoiceNumber, "O-0001"), eq(invoices.companyId, company.id)),
         });
         expect(invoice).toEqual(
           expect.objectContaining({
-            totalAmountInUsdCents: 50000n,
+            totalAmountInUsdCents: BigInt(50000),
             equityPercentage: 25,
-            cashAmountInCents: 37500n,
-            equityAmountInCents: 12500n,
+            cashAmountInCents: BigInt(37500),
+            equityAmountInCents: BigInt(12500),
             equityAmountInOptions: 13,
             minAllowedEquityPercentage: 25,
             maxAllowedEquityPercentage: 75,
@@ -246,15 +239,10 @@ test.describe("One-off payments", () => {
           cashAmountInCents: BigInt(5400),
           totalAmountInUsdCents: BigInt(6000),
         });
-        await login(page, workerUser);
+        await login(page, workerUser, `/invoices/${invoice.externalId}`);
 
-        await page.goto(`/invoices/${invoice.externalId}`);
         await page.getByRole("button", { name: "Accept payment" }).click();
-        await page.waitForLoadState("networkidle");
-
         await withinModal(async (modal) => modal.getByRole("button", { name: "Accept payment" }).click(), { page });
-
-        await expect(page.getByRole("dialog")).not.toBeVisible();
         await expect(page.getByRole("button", { name: "Accept payment" })).not.toBeVisible();
       });
 
@@ -267,18 +255,16 @@ test.describe("One-off payments", () => {
           invoiceType: "other",
           status: "approved",
           equityPercentage: 0,
-          equityAmountInCents: 0n,
+          equityAmountInCents: BigInt(0),
           equityAmountInOptions: 0,
           cashAmountInCents: BigInt(50000),
           totalAmountInUsdCents: BigInt(50000),
           minAllowedEquityPercentage: 0,
           maxAllowedEquityPercentage: 100,
         });
-        await login(page, workerUser);
+        await login(page, workerUser, `/invoices/${invoice.externalId}`);
 
-        await page.goto(`/invoices/${invoice.externalId}`);
         await page.getByRole("button", { name: "Accept payment" }).click();
-        await page.waitForLoadState("networkidle");
 
         await withinModal(
           async (modal) => {
@@ -286,34 +272,26 @@ test.describe("One-off payments", () => {
             const containerBounds = await sliderContainer.boundingBox();
             if (!containerBounds) throw new Error("Could not get slider container bounds");
 
-            // Move equity thumb to 25%
             const equityPercentageThumb = modal.getByRole("slider");
-            const thumbBounds = await equityPercentageThumb.boundingBox();
-            if (!thumbBounds) throw new Error("Could not get equity thumb bounds");
+            await equityPercentageThumb.focus();
+            await equityPercentageThumb.press("Home");
 
-            await equityPercentageThumb.hover();
-            await page.mouse.down();
-            await page.mouse.move(
-              containerBounds.x + containerBounds.width * 0.25,
-              containerBounds.y + containerBounds.height / 2,
-            );
-            await page.mouse.up();
+            // Move to 25% by pressing Arrow Right 25 times (assuming 1% per step)
+            for (let i = 0; i < 25; i++) {
+              await equityPercentageThumb.press("ArrowRight");
+            }
 
             await modal.getByRole("button", { name: "Confirm 25% split" }).click();
           },
           { page },
         );
 
-        await expect(page.getByRole("dialog")).not.toBeVisible();
-        await expect(page.getByRole("button", { name: "Confirm 25% split" })).not.toBeVisible();
-
-        await page.waitForLoadState("networkidle");
         expect(await db.query.invoices.findFirst({ where: eq(invoices.id, invoice.id) })).toEqual(
           expect.objectContaining({
-            totalAmountInUsdCents: 50000n,
+            totalAmountInUsdCents: BigInt(50000),
             equityPercentage: 25,
-            cashAmountInCents: 37500n,
-            equityAmountInCents: 12500n,
+            cashAmountInCents: BigInt(37500),
+            equityAmountInCents: BigInt(12500),
             equityAmountInOptions: 13,
             minAllowedEquityPercentage: 0,
             maxAllowedEquityPercentage: 100,
@@ -328,9 +306,8 @@ test.describe("One-off payments", () => {
       page,
       sentEmails: _,
     }) => {
-      await login(page, adminUser);
+      await login(page, adminUser, `/people/${workerUser.externalId}?tab=invoices`);
 
-      await page.goto(`/people/${workerUser.externalId}?tab=invoices`);
       await page.getByRole("button", { name: "Issue payment" }).click();
 
       await withinModal(
@@ -341,9 +318,8 @@ test.describe("One-off payments", () => {
         },
         { page },
       );
-      await expect(page.getByRole("dialog")).not.toBeVisible();
 
-      await clerk.signOut({ page });
+      await logout(page);
       await login(page, workerUser);
 
       await page.getByRole("link", { name: "Invoices" }).click();
@@ -365,9 +341,7 @@ test.describe("One-off payments", () => {
         { page },
       );
 
-      await expect(page.getByRole("dialog")).not.toBeVisible();
-
-      await clerk.signOut({ page });
+      await logout(page);
       await login(page, adminUser);
 
       await page.getByRole("link", { name: "Invoices" }).click();
@@ -396,8 +370,7 @@ test.describe("One-off payments", () => {
 
       await db.update(invoices).set({ status: "failed" }).where(eq(invoices.id, invoice.id));
 
-      await login(page, adminUser);
-      await page.goto("/invoices");
+      await login(page, adminUser, "/invoices");
 
       await expect(page.locator("tbody")).toBeVisible();
 

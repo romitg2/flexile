@@ -1,83 +1,73 @@
-import { clerk } from "@clerk/testing/playwright";
-import { db } from "@test/db";
+import { faker } from "@faker-js/faker";
+import { db, takeOrThrow } from "@test/db";
 import { companiesFactory } from "@test/factories/companies";
-import { companyAdministratorsFactory } from "@test/factories/companyAdministrators";
-import { usersFactory } from "@test/factories/users";
-import { login } from "@test/helpers/auth";
+import { externalProviderMock, fillOtp, login } from "@test/helpers/auth";
 import { expect, test } from "@test/index";
 import { and, eq } from "drizzle-orm";
-import { companies, companyContractors, companyInviteLinks, users } from "@/db/schema";
+import { SignInMethod } from "@/db/enums";
+import { companyContractors } from "@/db/schema";
 
 test.describe("Contractor Invite Link Joining flow", () => {
-  let company: typeof companies.$inferSelect;
-  let admin: typeof users.$inferSelect;
-  let inviteLink: typeof companyInviteLinks.$inferSelect | undefined;
+  test("invite link flow for unauthenticated user", async ({ page }) => {
+    const { company } = await companiesFactory.createCompletedOnboarding({ inviteLink: faker.string.alpha(10) });
+    await page.goto(`/invite/${company.inviteLink}`);
 
-  test.beforeEach(async () => {
-    const result = await companiesFactory.create({
-      name: "Gumroad",
-      streetAddress: "548 Market Street",
-      city: "San Francisco",
-      state: "CA",
-      zipCode: "94104-5401",
-      countryCode: "US",
-    });
-    company = result.company;
+    const email = faker.internet.email().toLowerCase();
+    await page.getByLabel("Work email").fill(email);
+    await page.getByRole("button", { name: "Sign up", exact: true }).click();
+    await fillOtp(page);
 
-    const adminResult = await usersFactory.create();
-    admin = adminResult.user;
+    await expect(page.getByText(/What will you be doing at/iu)).toBeVisible();
+    await expect(page.getByRole("button", { name: "close" })).not.toBeVisible();
 
-    await companyAdministratorsFactory.create({
-      companyId: company.id,
-      userId: admin.id,
-    });
+    const contractor = await db.query.companyContractors
+      .findFirst({ with: { user: true }, where: eq(companyContractors.companyId, company.id) })
+      .then(takeOrThrow);
 
-    await db.insert(companyInviteLinks).values({
-      companyId: company.id,
-      documentTemplateId: null,
-      token: encodeURIComponent(crypto.randomUUID()),
-      createdAt: new Date(),
-    });
-
-    inviteLink = await db.query.companyInviteLinks.findFirst({
-      where: eq(companyInviteLinks.companyId, company.id),
-    });
+    expect(contractor.user.email).toBe(email);
+    expect(contractor.role).toBe(null);
+    expect(contractor.contractSignedElsewhere).toBe(true);
   });
 
-  test("invite link flow for unauthenticated user", async ({ page, context }) => {
-    await page.goto(`/invite/${inviteLink?.token}`);
-    await expect(page).toHaveURL(/signup/iu);
+  test("existing company members with other roles can skip contractor onboarding", async ({ page }) => {
+    const { adminUser, company } = await companiesFactory.createCompletedOnboarding({
+      inviteLink: faker.string.alpha(10),
+    });
 
-    const cookies = await context.cookies();
-    const invitationCookie = cookies.find((c) => c.name === "invitation_token");
-    expect(inviteLink?.token).toContain(invitationCookie?.value);
+    await login(page, adminUser);
+
+    await page.goto(`/invite/${company.inviteLink}`);
+
+    await expect(page.getByText(/What will you be doing at/iu)).toBeVisible();
+    await page.getByRole("button", { name: "close" }).click();
+
+    await page.getByRole("link", { name: "Invoices" }).click();
+    await expect(page.getByRole("heading", { name: "Invoices" })).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByText(/What will you be doing at/iu)).toBeVisible();
+    await page.getByRole("button", { name: "close" }).click();
+
+    await page.getByRole("button", { name: "complete your onboarding" }).click();
+
+    await page.getByRole("button", { name: "Continue" }).click();
+
+    await expect(page.getByLabel("Role")).not.toBeValid();
   });
 
   test("invite link flow for authenticated user", async ({ page }) => {
-    const { user: contractor } = await usersFactory.create();
-    const result = await companiesFactory.create();
-    const existingCompany = result.company;
-    await companyAdministratorsFactory.create({
-      companyId: existingCompany.id,
-      userId: contractor.id,
-    });
+    const { adminUser } = await companiesFactory.createCompletedOnboarding();
+    const { company } = await companiesFactory.createCompletedOnboarding({ inviteLink: faker.string.alpha(10) });
 
-    await login(page, contractor);
+    await login(page, adminUser);
 
-    await page.goto(`/invite/${inviteLink?.token}`);
-    await expect(page).toHaveURL(/documents/iu);
-
-    const createdCompayContractor = await db.query.companyContractors.findFirst({
-      where: and(eq(companyContractors.companyId, company.id), eq(companyContractors.userId, contractor.id)),
-    });
-
-    expect(createdCompayContractor).toBeDefined();
-    expect(createdCompayContractor?.role).toBe(null);
-    expect(createdCompayContractor?.contractSignedElsewhere).toBe(true);
+    await page.goto(`/invite/${company.inviteLink}`);
 
     await expect(page.getByText(/What will you be doing at/iu)).toBeVisible();
-    await expect(page.getByLabel("Role")).toBeVisible();
-    await expect(page.getByLabel("Rate")).toBeVisible();
+
+    await page.getByRole("button", { name: "Continue" }).click();
+
+    await expect(page.getByLabel("Role")).not.toBeValid();
 
     await page.getByLabel("Role").fill("Hourly Role 1");
     await page.getByLabel("Rate").fill("99");
@@ -86,23 +76,40 @@ test.describe("Contractor Invite Link Joining flow", () => {
     await expect(
       page.getByText(`Your details have been submitted. ${company.name} will be in touch if anything else is needed.`),
     ).toBeVisible();
-    await page.locator('div[role="dialog"] button:has-text("Close")').first().click();
 
-    await page.getByRole("link", { name: "Invoices" }).click();
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "Documents" })).toBeVisible();
+    await expect(page.getByText(/What will you be doing at/iu)).not.toBeVisible();
+
+    const contractor = await db.query.companyContractors
+      .findFirst({
+        where: and(eq(companyContractors.companyId, company.id), eq(companyContractors.userId, adminUser.id)),
+      })
+      .then(takeOrThrow);
+    expect(contractor.role).toBe("Hourly Role 1");
+    expect(contractor.contractSignedElsewhere).toBe(true);
+
+    await page.goto(`/invite/${company.inviteLink}`);
     await expect(page.getByRole("heading", { name: "Invoices" })).toBeVisible();
+  });
 
-    const updatedCompayContractor = await db.query.companyContractors.findFirst({
-      where: and(eq(companyContractors.companyId, company.id), eq(companyContractors.userId, contractor.id)),
-    });
-    expect(updatedCompayContractor?.role).not.toBe(null);
+  test("invite link flow with oauth sign up", async ({ page }) => {
+    const { company } = await companiesFactory.createCompletedOnboarding({ inviteLink: faker.string.alpha(10) });
+    await page.goto(`/invite/${company.inviteLink}`);
 
-    await clerk.signOut({ page });
-    await login(page, admin);
-    await page.getByRole("link", { name: "People" }).click();
-    await expect(page.getByRole("heading", { name: "People" })).toBeVisible();
+    const email = faker.internet.email().toLowerCase();
+    await externalProviderMock(page, String(SignInMethod.Google), { email });
+    await page.getByRole("button", { name: "Sign up with Google" }).click();
 
-    const row = page.getByRole("row").filter({ hasText: contractor.preferredName || contractor.email });
-    await expect(row).toContainText(contractor.preferredName || contractor.email);
-    await expect(row).toContainText("Hourly Role 1");
+    await expect(page).toHaveURL(/documents/iu);
+    await expect(page.getByText(/What will you be doing at/iu)).toBeVisible();
+
+    const contractor = await db.query.companyContractors
+      .findFirst({ with: { user: true }, where: eq(companyContractors.companyId, company.id) })
+      .then(takeOrThrow);
+
+    expect(contractor.user.email).toBe(email);
+    expect(contractor.role).toBe(null);
+    expect(contractor.contractSignedElsewhere).toBe(true);
   });
 });

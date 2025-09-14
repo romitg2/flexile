@@ -6,24 +6,36 @@ if [ -f ".vercel/project.json" ]; then
     pnpx vercel env pull .env
 elif [ ! -f ".env" ]; then
     echo ".env file not found. Please run bin/setup first."
+    exit 1
 fi
 
+echo "Installing Node.js dependencies..."
 pnpm install
+
+echo "Starting Docker services..."
+make local
+
 cd backend
+
+echo "Installing backend dependencies..."
 bundle install
+
+echo "Preparing database..."
 bin/rails db:prepare
+
 cd ..
 
 function kill_process_listening_on_port {
-  lsof -i :$1 | grep LISTEN | awk '{print $2}' | xargs -r kill -9
+  pids="$(lsof -t -i :"$1" -sTCP:LISTEN 2>/dev/null | tr '\n' ' ')"
+  if [ -n "$pids" ]; then
+    kill -9 $pids 2>/dev/null || true
+  fi
 }
 
-echo "Starting application services"
+echo "Cleaning up existing processes..."
 kill_process_listening_on_port 3000
 kill_process_listening_on_port 3001
-kill_process_listening_on_port 8288 # inngest
 rm -f backend/tmp/pids/server.pid
 
-export NODE_EXTRA_CA_CERTS="$(node docker/createCertificate.js)"
-make local
+echo "Starting application services..."
 foreman start -f Procfile.dev "$@"

@@ -1,22 +1,17 @@
-import { clerk } from "@clerk/testing/playwright";
 import { db } from "@test/db";
 import { companiesFactory } from "@test/factories/companies";
 import { companyContractorsFactory } from "@test/factories/companyContractors";
-import { fillDatePicker } from "@test/helpers";
-import { login } from "@test/helpers/auth";
-import { mockDocuseal } from "@test/helpers/docuseal";
-import { expect, test, withinModal } from "@test/index";
+import { fillDatePicker, findRichTextEditor } from "@test/helpers";
+import { login, logout } from "@test/helpers/auth";
+import { expect, test } from "@test/index";
 import { addDays, addYears, format } from "date-fns";
 import { eq } from "drizzle-orm";
 import { users } from "@/db/schema";
-import { assert } from "@/utils/assert";
+import { assert, assertDefined } from "@/utils/assert";
 
 test.describe("End contract", () => {
-  test("allows admin to end contractor's contract", async ({ page, next }) => {
+  test("allows admin to end contractor's contract", async ({ page }) => {
     const { company, adminUser } = await companiesFactory.createCompletedOnboarding();
-
-    await login(page, adminUser);
-
     const { companyContractor } = await companyContractorsFactory.create({
       companyId: company.id,
     });
@@ -26,7 +21,7 @@ test.describe("End contract", () => {
     assert(contractor != null, "Contractor is required");
     assert(contractor.preferredName != null, "Contractor preferred name is required");
 
-    await page.getByRole("link", { name: "People" }).click();
+    await login(page, adminUser, "/people");
     await page.getByRole("link", { name: contractor.preferredName }).click();
     await page.getByRole("button", { name: "End contract" }).click();
 
@@ -45,23 +40,12 @@ test.describe("End contract", () => {
     // Re-invite
     await page.getByRole("link", { name: "People" }).click();
     await page.getByRole("button", { name: "Add contractor" }).click();
-    const { mockForm } = mockDocuseal(next, {
-      submitters: () => ({ "Company Representative": adminUser, Signer: contractor }),
-    });
-    await mockForm(page);
     await page.getByLabel("Email").fill(contractor.email);
     const startDate = addYears(new Date(), 1);
     await fillDatePicker(page, "Start date", format(startDate, "MM/dd/yyyy"));
+    await page.getByRole("tab", { name: "Write" }).click();
+    await findRichTextEditor(page, "Contract").fill("This is a contract you must sign");
     await page.getByRole("button", { name: "Send invite" }).click();
-    await withinModal(
-      async (modal) => {
-        await modal.getByRole("button", { name: "Sign now" }).click();
-        await modal.getByRole("link", { name: "Type" }).click();
-        await modal.getByPlaceholder("Type signature here...").fill("Admin Admin");
-        await modal.getByRole("button", { name: "Complete" }).click();
-      },
-      { page },
-    );
 
     await expect(
       page
@@ -70,13 +54,13 @@ test.describe("End contract", () => {
         .filter({ hasText: `Starts on ${format(startDate, "MMM d, yyyy")}` }),
     ).toBeVisible();
 
-    await clerk.signOut({ page });
+    await logout(page);
     await login(page, contractor);
     await page.getByRole("link", { name: "sign it" }).click();
-    await page.getByRole("button", { name: "Sign now" }).click();
-    await page.getByRole("link", { name: "Type" }).click();
-    await page.getByPlaceholder("Type signature here...").fill("Flexy Bob");
-    await page.getByRole("button", { name: "Complete" }).click();
+    await expect(page.getByText("This is a contract you must sign")).toBeVisible();
+    await page.getByRole("button", { name: "Add your signature" }).click();
+    await expect(page.getByText(assertDefined(contractor.legalName))).toBeVisible();
+    await page.getByRole("button", { name: "Agree & Submit" }).click();
     await expect(page.getByRole("heading", { name: "Invoices" })).toBeVisible();
   });
 
@@ -113,5 +97,42 @@ test.describe("End contract", () => {
 
     await expect(page.getByText(`Contract ends on`)).not.toBeVisible();
     await expect(page.getByRole("button", { name: "End contract" })).toBeVisible();
+  });
+
+  test("displays consistent end date in Pacific Time timezone", async ({ browser }) => {
+    const context = await browser.newContext({
+      timezoneId: "America/Los_Angeles", // Pacific Time
+      locale: "en-US",
+    });
+    const page = await context.newPage();
+
+    const { company, adminUser } = await companiesFactory.createCompletedOnboarding();
+    await login(page, adminUser);
+
+    const { companyContractor } = await companyContractorsFactory.create({
+      companyId: company.id,
+    });
+    const contractor = await db.query.users.findFirst({
+      where: eq(users.id, companyContractor.userId),
+    });
+    assert(contractor != null, "Contractor is required");
+    assert(contractor.preferredName != null, "Contractor preferred name is required");
+
+    const endDate = new Date("2025-08-12");
+    const expectedDisplay = format(endDate, "MMM d, yyyy");
+
+    await page.getByRole("link", { name: "People" }).click();
+    await page.getByRole("link", { name: contractor.preferredName }).click();
+    await page.getByRole("button", { name: "End contract" }).click();
+
+    await fillDatePicker(page, "End date", format(endDate, "MM/dd/yyyy"));
+    await page.getByRole("button", { name: "Yes, end contract" }).click();
+
+    // Verify date displays correctly in Pacific Time (should not shift to the previous day)
+    await expect(page.getByRole("row").getByText(`Ended on ${expectedDisplay}`)).toBeVisible();
+    await page.getByRole("link", { name: contractor.preferredName }).click();
+    await expect(page.getByText(`Contract ended on ${expectedDisplay}`)).toBeVisible();
+
+    await context.close();
   });
 });

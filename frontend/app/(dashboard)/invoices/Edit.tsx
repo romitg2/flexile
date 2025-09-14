@@ -57,7 +57,7 @@ const dataSchema = z.object({
     id: z.string(),
     name: z.string(),
     address: addressSchema,
-    expenses: z.object({ enabled: z.boolean(), categories: z.array(z.object({ id: z.number(), name: z.string() })) }),
+    expense_categories: z.array(z.object({ id: z.number(), name: z.string() })),
   }),
   invoice: z.object({
     id: z.string().optional(),
@@ -206,7 +206,7 @@ const Edit = () => {
   const createNewExpenseEntries = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
-    const expenseCategory = assertDefined(data.company.expenses.categories[0]);
+    const expenseCategory = assertDefined(data.company.expense_categories[0]);
     setShowExpenses(true);
     setExpenses((expenses) =>
       expenses.push(
@@ -267,11 +267,16 @@ const Edit = () => {
             {data.invoice.id && data.invoice.status === "rejected" ? (
               <div className="inline-flex items-center">Action required</div>
             ) : (
-              <Button variant="outline" asChild>
+              <Button size="small" variant="outline" asChild>
                 <Link href="/invoices">Cancel</Link>
               </Button>
             )}
-            <Button variant="primary" onClick={() => validate() && submit.mutate()} disabled={submit.isPending}>
+            <Button
+              size="small"
+              variant="primary"
+              onClick={() => validate() && submit.mutate()}
+              disabled={submit.isPending}
+            >
               <PaperAirplaneIcon className="size-4" />
               {submit.isPending ? "Sending..." : data.invoice.id ? "Re-submit invoice" : "Send invoice"}
             </Button>
@@ -280,7 +285,7 @@ const Edit = () => {
       />
 
       {payRateInSubunits && lineItems.some((lineItem) => lineItem.pay_rate_in_subunits > payRateInSubunits) ? (
-        <Alert variant="warning">
+        <Alert className="mx-4" variant="warning">
           <CircleAlert />
           <AlertDescription>
             This invoice includes rates above your default of {formatMoneyFromCents(payRateInSubunits)}/
@@ -291,7 +296,7 @@ const Edit = () => {
 
       <section>
         <div className="grid gap-4">
-          <div className="grid auto-cols-fr gap-3 md:grid-flow-col">
+          <div className="mx-4 grid auto-cols-fr gap-3 md:grid-flow-col">
             <div>
               From
               <br />
@@ -395,7 +400,7 @@ const Edit = () => {
                       <PlusIcon className="inline size-4" />
                       Add line item
                     </Button>
-                    {data.company.expenses.categories.length && !showExpensesTable ? (
+                    {data.company.expense_categories.length && !showExpensesTable ? (
                       <Button variant="link" onClick={() => uploadExpenseRef.current?.click()}>
                         <ArrowUpTrayIcon className="inline size-4" />
                         Add expense
@@ -406,7 +411,7 @@ const Edit = () => {
               </TableRow>
             </TableFooter>
           </Table>
-          {data.company.expenses.categories.length ? (
+          {data.company.expense_categories.length ? (
             <input
               ref={uploadExpenseRef}
               type="file"
@@ -447,7 +452,7 @@ const Edit = () => {
                     <TableCell>
                       <ComboBox
                         value={expense.category_id.toString()}
-                        options={data.company.expenses.categories.map((category) => ({
+                        options={data.company.expense_categories.map((category) => ({
                           value: category.id.toString(),
                           label: category.name,
                         }))}
@@ -494,7 +499,7 @@ const Edit = () => {
             </Table>
           ) : null}
 
-          <footer className="flex flex-col gap-3 lg:flex-row lg:justify-between">
+          <footer className="mx-4 flex flex-col gap-3 lg:flex-row lg:justify-between">
             <Textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}

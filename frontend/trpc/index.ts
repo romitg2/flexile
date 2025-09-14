@@ -12,23 +12,25 @@ import {
 } from "@trpc/server";
 import type { FetchCreateContextFnOptions } from "@trpc/server/adapters/fetch";
 import { eq } from "drizzle-orm";
+import { getServerSession } from "next-auth";
 import { cache } from "react";
 import superjson from "superjson";
 import { z } from "zod";
 import { db } from "@/db";
 import { companies, users } from "@/db/schema";
 import env from "@/env";
+import { authOptions } from "@/lib/auth";
 import { assertDefined } from "@/utils/assert";
 import { richTextExtensions } from "@/utils/richText";
-import { internal_userid_url } from "@/utils/routes";
+import { configure as configureRoutes } from "@/utils/routes";
 import { latestUserComplianceInfo, withRoles } from "./routes/users/helpers";
 import { type AppRouter } from "./server";
 
+configureRoutes({ default_url_options: { host: env.DOMAIN, protocol: env.PROTOCOL } });
+
 export const createContext = cache(async ({ req }: FetchCreateContextFnOptions) => {
-  const host = assertDefined(req.headers.get("Host"));
   const cookie = req.headers.get("cookie") ?? "";
   const userAgent = req.headers.get("user-agent") ?? "";
-  const ipAddress = req.headers.get("x-real-ip") ?? req.headers.get("x-forwarded-for")?.split(",")[0] ?? "";
   const csrfToken = cookie
     .split("; ")
     .find((row) => row.startsWith("X-CSRF-Token="))
@@ -36,18 +38,30 @@ export const createContext = cache(async ({ req }: FetchCreateContextFnOptions) 
   const headers: Record<string, string> = {
     cookie,
     "user-agent": userAgent,
-    referer: "x" /* work around a Clerk limitation */,
     accept: "application/json",
     ...(csrfToken ? { "x-csrf-token": csrfToken } : {}),
   };
-  const response = await fetch(internal_userid_url({ host }), { headers });
-  const userId = response.ok ? z.object({ id: z.number() }).parse(await response.json()).id : null;
+
+  let userId: number | null = null;
+
+  // Get userId from NextAuth JWT session
+  const session = await getServerSession(authOptions);
+  if (session?.user) {
+    // Extract user ID from JWT token
+    try {
+      const jwt = session.user.jwt;
+      const base64Payload = jwt.split(".")[1];
+      if (base64Payload) {
+        const payload = z
+          .object({ user_id: z.number() })
+          .safeParse(JSON.parse(Buffer.from(base64Payload, "base64").toString()));
+        if (payload.success) userId = payload.data.user_id;
+      }
+    } catch {}
+  }
 
   return {
     userId,
-    host,
-    ipAddress,
-    userAgent,
     headers,
   };
 });

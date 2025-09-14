@@ -8,6 +8,7 @@ tmp
 
 # Environment and configuration
 .env*
+!.env.example
 !.env.test
 .env*.local
 .vercel
@@ -16,7 +17,6 @@ tmp
 # Dependencies
 /node_modules
 /.puppeteer
-/certificates
 
 # Rails credentials
 /backend/config/master.key
@@ -30,3 +30,8 @@ tmp
 # IDE
 .vscode
 .idea
+
+certificates/
+
+certificates/flexile.dev
+certificates/api.flexile.dev

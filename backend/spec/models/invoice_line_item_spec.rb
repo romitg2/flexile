@@ -1,12 +1,8 @@
 # frozen_string_literal: true
 
-require "spec_helper"
-
 RSpec.describe InvoiceLineItem do
   describe "associations" do
     it { is_expected.to belong_to(:invoice) }
-    it { is_expected.to have_many(:integration_records) }
-    it { is_expected.to have_one(:quickbooks_integration_record) }
   end
 
   describe "validations" do

@@ -11,16 +11,16 @@ export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
-  workers: 4,
+  retries: process.env.CI ? 1 : 0,
+  workers: process.env.CI ? "100%" : undefined,
   reporter: process.env.CI ? [["list"], ["html"]] : "list",
   use: {
-    baseURL: "https://test.flexile.dev:3101",
+    baseURL: "http://localhost:3100",
     trace: "on-first-retry",
-    contextOptions: {
-      ignoreHTTPSErrors: true,
-    },
+    video: "retain-on-failure",
+    screenshot: "only-on-failure",
     locale: "en-US",
+    timezoneId: "UTC",
   },
   expect: { timeout: 30000, toPass: { timeout: 30000 } },
   timeout: process.env.CI ? 30000 : 120000,
@@ -31,15 +31,17 @@ export default defineConfig({
     },
     {
       name: "chromium",
-      use: { ...devices["Desktop Chrome"] },
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1920, height: 1080 },
+      },
       dependencies: ["setup"],
     },
   ],
   tsconfig: "./e2e/tsconfig.json",
   webServer: {
     command: "bin/test_server",
-    url: "https://test.flexile.dev:3101",
+    url: "http://localhost:3100",
     reuseExistingServer: !process.env.CI,
-    ignoreHTTPSErrors: true,
   },
 });

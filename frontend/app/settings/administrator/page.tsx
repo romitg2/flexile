@@ -8,7 +8,6 @@ import { z } from "zod";
 import ColorPicker from "@/components/ColorPicker";
 import { MutationStatusButton } from "@/components/MutationButton";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,7 +15,6 @@ import { useCurrentCompany } from "@/global";
 import defaultLogo from "@/images/default-company-logo.svg";
 import { trpc } from "@/trpc/client";
 import { md5Checksum } from "@/utils";
-import QuickbooksIntegration from "./QuickbooksIntegration";
 import StripeMicrodepositVerification from "./StripeMicrodepositVerification";
 
 const formSchema = z.object({
@@ -43,6 +41,9 @@ export default function SettingsPage() {
     () => (logoFile ? URL.createObjectURL(logoFile) : (company.logo_url ?? defaultLogo.src)),
     [logoFile, company.logo_url],
   );
+
+  // Determine if we're using the default logo to adjust styling accordingly
+  const isDefaultLogo = logoUrl.includes("default-company-logo");
 
   const createUploadUrl = trpc.files.createDirectUploadUrl.useMutation();
   const updateSettings = trpc.companies.update.useMutation();
@@ -84,7 +85,7 @@ export default function SettingsPage() {
   const submit = form.handleSubmit((values) => saveMutation.mutate(values));
 
   return (
-    <div className="grid gap-8">
+    <div className="mb-24 grid gap-8">
       <hgroup>
         <h2 className="mb-1 text-3xl font-bold">Workspace settings</h2>
         <p className="text-muted-foreground text-base">
@@ -108,8 +109,16 @@ export default function SettingsPage() {
                     }
                   }}
                 />
-                <Avatar className="size-12 rounded-md">
-                  <AvatarImage src={logoUrl} alt="Company logo" />
+                <Avatar
+                  className={`flex size-12 items-center justify-center rounded-md ${
+                    isDefaultLogo ? "border-input border bg-gray-50/50" : ""
+                  }`}
+                >
+                  <AvatarImage
+                    src={logoUrl}
+                    alt="Company logo"
+                    className={`rounded ${isDefaultLogo ? "size-6" : "size-12"}`}
+                  />
                   <AvatarFallback>Logo</AvatarFallback>
                 </Avatar>
               </Label>
@@ -161,6 +170,7 @@ export default function SettingsPage() {
           <MutationStatusButton
             mutation={saveMutation}
             type="submit"
+            size="small"
             successText="Changes saved"
             loadingText="Saving..."
             className="w-fit"
@@ -170,14 +180,6 @@ export default function SettingsPage() {
         </form>
       </Form>
       <StripeMicrodepositVerification />
-      {company.flags.includes("quickbooks") ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Integrations</CardTitle>
-          </CardHeader>
-          <CardContent>{company.flags.includes("quickbooks") ? <QuickbooksIntegration /> : null}</CardContent>
-        </Card>
-      ) : null}
     </div>
   );
 }

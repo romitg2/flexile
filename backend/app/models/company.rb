@@ -56,7 +56,6 @@ class Company < ApplicationRecord
     end
   end
   has_many :company_investors
-  has_many :company_invite_links, dependent: :destroy # dependent: :destroy is needed to clean up invite links when a company is deleted
 
   has_many :investors, through: :company_investors, source: :user
   has_many :company_updates
@@ -76,7 +75,6 @@ class Company < ApplicationRecord
   has_many :balance_transactions
   has_one :balance
   has_one :equity_exercise_bank_account, -> { order(id: :desc) }
-  has_one :quickbooks_integration, -> { alive }
   has_many :share_classes
   has_many :share_holdings, through: :company_investors
   has_many :option_pools
@@ -84,7 +82,7 @@ class Company < ApplicationRecord
   has_many :company_stripe_accounts
   has_many :bank_accounts, class_name: "CompanyStripeAccount"
   has_one :bank_account, -> { alive.order(created_at: :desc) }, class_name: "CompanyStripeAccount"
-  has_one_attached :logo, service: (Rails.env.test? ? :test_public : :amazon_public)
+  has_one_attached :logo, service: public_bucket
   has_one_attached :full_logo
 
   validates :name, presence: true, on: :update, if: :name_changed?
@@ -107,7 +105,6 @@ class Company < ApplicationRecord
   validates :brand_color, hex_color: true, if: :brand_color_changed?
 
   scope :active, -> { where(deactivated_at: nil) }
-  scope :is_gumroad, -> { where(is_gumroad: true) }
   scope :is_trusted, -> { where(is_trusted: true) }
 
   after_create_commit :create_balance!
@@ -176,14 +173,6 @@ class Company < ApplicationRecord
     is_trusted? ? 2 : 10 # estimated max number of business days for a contractor to receive payment after a consolidated invoice is charged
   end
 
-  def quickbooks_enabled?
-    Flipper.enabled?(:quickbooks, self)
-  end
-
-  def expenses_enabled?
-    Flipper.enabled?(:expenses, self)
-  end
-
   def find_company_worker!(user:)
     company_workers.find_by!(user:)
   end
@@ -219,6 +208,23 @@ class Company < ApplicationRecord
     return 0 if checklist_items(user).empty?
 
     (completed_count.to_f / checklist_items(user).size * 100).round
+  end
+
+  def invite_link
+    super || reset_invite_link!
+  end
+
+  def reset_invite_link!
+    invite_link = SecureRandom.base58(16)
+    update!(invite_link:)
+    invite_link
+  end
+
+  def cap_table_empty?
+    !option_pools.exists? &&
+      !share_classes.exists? &&
+      !company_investors.exists? &&
+      !share_holdings.exists?
   end
 
   private

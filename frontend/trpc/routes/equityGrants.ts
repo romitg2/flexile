@@ -1,18 +1,14 @@
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, gt, gte, isNotNull, isNull, lte, or, sql, type SQLWrapper, sum } from "drizzle-orm";
-import { createInsertSchema } from "drizzle-zod";
+import { and, desc, eq, gt, gte, isNotNull, isNull, or, sql, type SQLWrapper, sum } from "drizzle-orm";
 import { omit, pick } from "lodash-es";
 import { z } from "zod";
 import { byExternalId, db } from "@/db";
-import { DocumentTemplateType, optionGrantTypes, optionGrantVestingTriggers } from "@/db/enums";
 import {
+  companyAdministrators,
   companyContractors,
   companyInvestors,
-  documents,
-  documentTemplates,
   equityGrantExercises,
   equityGrants,
-  equityGrantTransactions,
   optionPools,
   users,
   vestingEvents,
@@ -20,10 +16,8 @@ import {
 } from "@/db/schema";
 import { DEFAULT_VESTING_SCHEDULE_OPTIONS } from "@/models";
 import { type CompanyContext, companyProcedure, createRouter } from "@/trpc";
-import { createSubmission } from "@/trpc/routes/documents/templates";
 import { simpleUser } from "@/trpc/routes/users";
 import { assertDefined } from "@/utils/assert";
-import { company_administrator_equity_grants_url } from "@/utils/routes";
 
 export type EquityGrant = typeof equityGrants.$inferSelect;
 export const equityGrantsRouter = createRouter({
@@ -62,6 +56,16 @@ export const equityGrantsRouter = createRouter({
       with: {
         optionPool: { columns: { name: true, companyId: true } },
         companyInvestor: { with: { user: { columns: { countryCode: true, state: true, email: true } } } },
+        vestingEvents: {
+          columns: {
+            id: true,
+            vestingDate: true,
+            vestedShares: true,
+            processedAt: true,
+            cancelledAt: true,
+          },
+          orderBy: (vestingEvents, { asc }) => [asc(vestingEvents.vestingDate)],
+        },
       },
     });
 
@@ -139,91 +143,6 @@ export const equityGrantsRouter = createRouter({
         .where(where)
         .orderBy(desc(equityGrants[input.orderBy]));
     }),
-  create: companyProcedure
-    .input(
-      createInsertSchema(equityGrants)
-        .pick({ issueDateRelationship: true })
-        .extend({
-          companyWorkerId: z.string(),
-          optionPoolId: z.string(),
-          numberOfShares: z.number(),
-          optionGrantType: z.enum(optionGrantTypes),
-          optionExpiryMonths: z.number(),
-          voluntaryTerminationExerciseMonths: z.number(),
-          involuntaryTerminationExerciseMonths: z.number(),
-          terminationWithCauseExerciseMonths: z.number(),
-          deathExerciseMonths: z.number(),
-          disabilityExerciseMonths: z.number(),
-          retirementExerciseMonths: z.number(),
-          boardApprovalDate: z.string(),
-          vestingTrigger: z.enum(optionGrantVestingTriggers),
-          vestingScheduleId: z.string().nullable(),
-          vestingCommencementDate: z.string().nullable(),
-          totalVestingDurationMonths: z.number().nullable(),
-          cliffDurationMonths: z.number().nullable(),
-          vestingFrequencyMonths: z.string().nullable(),
-          docusealTemplateId: z.string(),
-        }),
-    )
-    .mutation(async ({ input, ctx }) => {
-      if (!ctx.companyAdministrator) throw new TRPCError({ code: "FORBIDDEN" });
-      const template = await db.query.documentTemplates.findFirst({
-        where: and(
-          eq(documentTemplates.externalId, input.docusealTemplateId),
-          eq(documentTemplates.type, DocumentTemplateType.EquityPlanContract),
-          or(eq(documentTemplates.companyId, ctx.company.id), isNull(documentTemplates.companyId)),
-        ),
-      });
-      if (!template) throw new TRPCError({ code: "NOT_FOUND" });
-
-      const worker = await db.query.companyContractors.findFirst({
-        where: and(
-          eq(companyContractors.externalId, input.companyWorkerId),
-          eq(companyContractors.companyId, ctx.company.id),
-        ),
-        with: { user: true },
-      });
-      if (!worker) throw new TRPCError({ code: "NOT_FOUND" });
-      const response = await fetch(
-        company_administrator_equity_grants_url(ctx.company.externalId, { host: ctx.host }),
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...ctx.headers },
-          body: JSON.stringify({
-            equity_grant: {
-              company_worker_id: input.companyWorkerId,
-              option_pool_id: input.optionPoolId,
-              number_of_shares: input.numberOfShares,
-              issue_date_relationship: input.issueDateRelationship,
-              option_grant_type: input.optionGrantType,
-              option_expiry_months: input.optionExpiryMonths,
-              voluntary_termination_exercise_months: input.voluntaryTerminationExerciseMonths,
-              involuntary_termination_exercise_months: input.involuntaryTerminationExerciseMonths,
-              termination_with_cause_exercise_months: input.terminationWithCauseExerciseMonths,
-              death_exercise_months: input.deathExerciseMonths,
-              disability_exercise_months: input.disabilityExerciseMonths,
-              retirement_exercise_months: input.retirementExerciseMonths,
-              board_approval_date: input.boardApprovalDate,
-              vesting_trigger: input.vestingTrigger,
-              vesting_schedule_id: input.vestingScheduleId,
-              vesting_commencement_date: input.vestingCommencementDate,
-              total_vesting_duration_months: input.totalVestingDurationMonths,
-              cliff_duration_months: input.cliffDurationMonths,
-              vesting_frequency_months: input.vestingFrequencyMonths,
-            },
-          }),
-        },
-      );
-
-      if (!response.ok) throw new TRPCError({ code: "BAD_REQUEST", message: await response.text() });
-      const { document_id } = z.object({ document_id: z.number() }).parse(await response.json());
-      const submission = await createSubmission(ctx, template.docusealId, worker.user, "Company Representative");
-      await db
-        .update(documents)
-        .set({ docusealSubmissionId: submission.id })
-        .where(eq(documents.id, BigInt(document_id)));
-      return { documentId: document_id };
-    }),
   totals: companyProcedure.query(async ({ ctx }) => {
     if (!ctx.companyAdministrator && !ctx.companyLawyer) throw new TRPCError({ code: "FORBIDDEN" });
     const [totals] = await db
@@ -273,32 +192,28 @@ export const equityGrantsRouter = createRouter({
       },
       where: eq(optionPools.companyId, ctx.company.id),
     });
-    const workers = await db.query.companyContractors.findMany({
-      columns: {
-        externalId: true,
-      },
-      with: {
-        user: {
-          columns: simpleUser.columns,
-          with: {
-            companyInvestors: {
-              where: eq(companyInvestors.companyId, ctx.company.id),
-              with: {
-                equityGrants: {
-                  orderBy: desc(equityGrants.issuedAt),
-                  limit: 1,
-                },
-              },
-            },
-          },
-        },
-      },
-      where: and(
-        eq(companyContractors.companyId, ctx.company.id),
-        isNull(companyContractors.endedAt),
-        lte(companyContractors.startedAt, new Date()),
-      ),
-    });
+    const userList = await db
+      .selectDistinctOn([users.id], {
+        ...pick(users, "externalId", "legalName", "email", "unconfirmedEmail", "preferredName"),
+        lastGrant: pick(equityGrants, "optionGrantType", "issueDateRelationship"),
+        activeContractor: assertDefined(and(isNotNull(companyContractors.id), isNull(companyContractors.endedAt))),
+      })
+      .from(users)
+      .leftJoin(
+        companyInvestors,
+        and(eq(users.id, companyInvestors.userId), eq(companyInvestors.companyId, ctx.company.id)),
+      )
+      .leftJoin(
+        companyContractors,
+        and(eq(users.id, companyContractors.userId), eq(companyContractors.companyId, ctx.company.id)),
+      )
+      .leftJoin(
+        companyAdministrators,
+        and(eq(users.id, companyAdministrators.userId), eq(companyAdministrators.companyId, ctx.company.id)),
+      )
+      .leftJoin(equityGrants, eq(equityGrants.companyInvestorId, companyInvestors.id))
+      .where(or(isNotNull(companyInvestors.id), isNotNull(companyContractors.id), isNotNull(companyAdministrators.id)))
+      .orderBy(desc(users.id), desc(equityGrants.issuedAt));
 
     const defaultVestingSchedules = (
       await Promise.all(
@@ -328,21 +243,12 @@ export const equityGrantsRouter = createRouter({
 
     return {
       optionPools: pools.map((pool) => omit({ ...pool, id: pool.externalId }, "externalId")),
-      workers: workers.map((worker) => {
-        const lastGrant = worker.user.companyInvestors[0]?.equityGrants[0];
-        return {
-          id: worker.externalId,
-          user: { ...simpleUser(worker.user), legalName: worker.user.legalName },
-          salaried: false,
-          lastGrant: lastGrant
-            ? {
-                optionGrantType: lastGrant.optionGrantType,
-                issueDateRelationship: lastGrant.issueDateRelationship,
-              }
-            : null,
-        };
-      }),
+      users: userList.map((user) => ({
+        ...user,
+        ...simpleUser(user),
+      })),
       defaultVestingSchedules,
+      sharePriceUsd: ctx.company.fmvPerShareInUsd,
     };
   }),
   cancel: companyProcedure.input(z.object({ id: z.string(), reason: z.string() })).mutation(async ({ input, ctx }) => {
@@ -366,19 +272,6 @@ export const equityGrantsRouter = createRouter({
       if (equityGrant?.optionPool.companyId !== ctx.company.id) throw new TRPCError({ code: "NOT_FOUND" });
 
       const totalForfeitedShares = equityGrant.unvestedShares + equityGrant.forfeitedShares;
-
-      await tx.insert(equityGrantTransactions).values([
-        {
-          transactionType: "cancellation",
-          equityGrantId: equityGrant.id,
-          forfeitedShares: BigInt(equityGrant.unvestedShares),
-          totalNumberOfShares: BigInt(equityGrant.numberOfShares),
-          totalVestedShares: BigInt(equityGrant.vestedShares),
-          totalUnvestedShares: BigInt(0),
-          totalExercisedShares: BigInt(equityGrant.exercisedShares),
-          totalForfeitedShares: BigInt(totalForfeitedShares),
-        },
-      ]);
 
       const cancelledAt = new Date();
       for (const vestingEvent of equityGrant.vestingEvents) {

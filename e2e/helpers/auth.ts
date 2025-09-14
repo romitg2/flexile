@@ -1,39 +1,48 @@
-import { clerk } from "@clerk/testing/playwright";
-import { type Page } from "@playwright/test";
-import { db } from "@test/db";
-import { eq } from "drizzle-orm";
+import { expect, type Page } from "@playwright/test";
 import { users } from "@/db/schema";
-import { assertDefined } from "@/utils/assert";
 
-const clerkTestUsers = [
-  { id: "user_2rV0f8ymVAsk3S0V6EhfSiQcGbK", email: "hi1+clerk_test@example.com" },
-  { id: "user_2vEWnlPOcxlENwUAXNxdTTLWlHD", email: "hi2+clerk_test@example.com" },
-  { id: "user_2vNAyVNltrKLy3YXFki6M6YhemM", email: "hi3+clerk_test@example.com" },
-  { id: "user_2vNFwz9EONQUFm7BGe48EHIZZGa", email: "hi4+clerk_test@example.com" },
-];
-let clerkTestUser: (typeof clerkTestUsers)[number] | undefined;
+// Backend accepts "000000" when Rails.env.test? && ENV['ENABLE_DEFAULT_OTP'] == 'true'
+const TEST_OTP_CODE = "000000";
 
-export const clearClerkUser = async () => {
-  if (clerkTestUser) await db.update(users).set({ clerkId: null }).where(eq(users.clerkId, clerkTestUser.id));
-  clerkTestUser = undefined;
+export const fillOtp = async (page: Page) => {
+  // Wait for the OTP input to be visible before filling
+  const otp = page.getByRole("textbox", { name: "Verification code" });
+  await expect(otp).toBeVisible();
+  await otp.fill(TEST_OTP_CODE);
 };
 
-export const setClerkUser = async (id: bigint) => {
-  await clearClerkUser();
-  for (const user of clerkTestUsers) {
-    try {
-      await db.update(users).set({ clerkId: user.id }).where(eq(users.id, id));
-      clerkTestUser = user;
-      break;
-    } catch {}
-  }
-  return assertDefined(clerkTestUser);
-};
+export const login = async (page: Page, user: typeof users.$inferSelect, redirectTo?: string) => {
+  const pageURL = redirectTo ? redirectTo : "/login";
+  await page.goto(pageURL);
 
-export const login = async (page: Page, user: typeof users.$inferSelect) => {
-  await page.goto("/login");
+  await page.getByLabel("Work email").fill(user.email);
+  await page.getByRole("button", { name: "Log in", exact: true }).click();
+  await fillOtp(page);
 
-  const clerkUser = await setClerkUser(user.id);
-  await clerk.signIn({ page, signInParams: { strategy: "email_code", identifier: clerkUser.email } });
   await page.waitForURL(/^(?!.*\/login$).*/u);
+};
+
+export const logout = async (page: Page) => {
+  if (page.url().includes("/login")) {
+    return;
+  }
+  if (!page.url().includes("/invoices")) {
+    // Navigate to invoices page to ensure we're on a dashboard page with sidebar
+    await page.goto("/invoices");
+  }
+  await page.getByRole("button", { name: "Log out" }).first().click();
+
+  // Wait for redirect to login
+  await page.waitForURL(/.*\/login.*/u);
+  await page.waitForLoadState("networkidle");
+};
+
+export const externalProviderMock = async (page: Page, provider: string, credentials: { email: string }) => {
+  await page.route(`**/api/auth/callback/${provider}`, async (route) => {
+    const body: unknown = await route.request().postDataJSON();
+    if (typeof body === "object") {
+      const modifiedData: string = new URLSearchParams({ ...body, email: credentials.email }).toString();
+      await route.continue({ postData: modifiedData });
+    }
+  });
 };
