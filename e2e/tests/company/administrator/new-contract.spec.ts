@@ -109,6 +109,10 @@ test.describe("New Contractor", () => {
       contractSignedElsewhere: true,
     });
     await login(page, user, "/people");
+
+    // wait for contractors list to be fetched
+    await page.waitForLoadState("networkidle");
+
     await page.getByRole("button", { name: "Add contractor" }).click();
     await expect(page.getByLabel("Role")).toHaveValue("Hourly Role 1");
     await expect(page.getByLabel("Rate")).toHaveValue("100");
