@@ -109,6 +109,7 @@ test.describe("New Contractor", () => {
       contractSignedElsewhere: true,
     });
     await login(page, user, "/people");
+    await page.waitForLoadState("domcontentloaded");
 
     // wait for contractors list to be fetched
     await page.waitForLoadState("networkidle");
