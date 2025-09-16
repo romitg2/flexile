@@ -94,6 +94,8 @@ test.describe("Company equity settings", () => {
 
     await page.getByRole("button", { name: "Save changes" }).click();
     await expect(page.getByRole("button", { name: "Save changes" })).toBeEnabled();
+    // wait for changes to be saved
+    await page.waitForLoadState("networkidle");
 
     const dbCompany = await db.query.companies.findFirst({
       where: eq(companies.id, company.id),
