@@ -14,8 +14,6 @@ export const fillOtp = async (page: Page) => {
 export const login = async (page: Page, user: typeof users.$inferSelect, redirectTo?: string) => {
   const pageURL = redirectTo ? redirectTo : "/login";
   await page.goto(pageURL);
-
-  await page.waitForLoadState("domcontentloaded");
   await page.getByLabel("Work email").fill(user.email);
   await page.getByRole("button", { name: "Log in", exact: true }).click();
   await fillOtp(page);
