@@ -6,7 +6,6 @@ const TEST_OTP_CODE = "000000";
 
 export const fillOtp = async (page: Page) => {
   // Wait for the OTP input to be visible before filling
-  // wait for verification code field to be visible
 
   const otp = page.getByRole("textbox", { name: "Verification code" });
   await expect(otp).toBeVisible();
