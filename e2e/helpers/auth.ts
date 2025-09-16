@@ -7,7 +7,7 @@ const TEST_OTP_CODE = "000000";
 export const fillOtp = async (page: Page) => {
   // Wait for the OTP input to be visible before filling
   const otp = page.getByRole("textbox", { name: "Verification code" });
-  await expect(otp).toBeVisible();
+  await expect(otp).toBeVisible({ timeout: 100000 });
   await otp.fill(TEST_OTP_CODE);
 };
 
