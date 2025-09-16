@@ -98,7 +98,7 @@ export const Editor = ({
 
   const normalizeUrl = (url: string): string => {
     // If already has http:// or https://, return as is
-    if (url.match(/^https?:\/\//u)) {
+    if (/^https?:\/\//u.exec(url)) {
       return url;
     }
     // If it looks like a domain/URL, add https://
