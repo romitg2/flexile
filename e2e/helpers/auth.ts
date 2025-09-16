@@ -6,6 +6,8 @@ const TEST_OTP_CODE = "000000";
 
 export const fillOtp = async (page: Page) => {
   // Wait for the OTP input to be visible before filling
+  // wait for verification code field to be visible
+
   const otp = page.getByRole("textbox", { name: "Verification code" });
   await expect(otp).toBeVisible();
   await otp.fill(TEST_OTP_CODE);
@@ -14,7 +16,7 @@ export const fillOtp = async (page: Page) => {
 export const login = async (page: Page, user: typeof users.$inferSelect, redirectTo?: string) => {
   const pageURL = redirectTo ? redirectTo : "/login";
   await page.goto(pageURL);
-
+  await page.waitForLoadState("domcontentloaded");
   await page.getByLabel("Work email").fill(user.email);
   await page.getByRole("button", { name: "Log in", exact: true }).click();
   await fillOtp(page);
