@@ -95,7 +95,7 @@ export default function Billing() {
         </p>
       </hgroup>
 
-      {stripeData !== undefined ? (
+      {stripeData !== undefined && !stripeDataError ? (
         // Re-render Stripe Elements provider when data changes as it considers its options immutable
         <>
           {stripeData.bank_account_last4 ? (
@@ -128,19 +128,11 @@ export default function Billing() {
         </>
       ) : isStripeDataLoading ? (
         <BankAccountCardSkeleton />
-      ) : stripeDataError ? (
+      ) : (
         <Placeholder icon={CircleDollarSign}>
           <p>Unable to load payment method information.</p>
           <Button variant="outline" onClick={() => void refetchStripeData()}>
-            <RefreshCw className="size-4" />
-            Try again
-          </Button>
-        </Placeholder>
-      ) : (
-        <Placeholder icon={CircleDollarSign}>
-          <p>No payment method found.</p>
-          <Button variant="outline" onClick={() => void refetchStripeData()}>
-            <RefreshCw className="size-4" />
+            <RefreshCw />
             Try again
           </Button>
         </Placeholder>
