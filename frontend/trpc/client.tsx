@@ -25,8 +25,15 @@ export const UserDataProvider = ({ children }: { children: React.ReactNode }) =>
     queryKey: ["currentUser", userId],
     queryFn: isSignedIn
       ? async (): Promise<unknown> => {
+          const currentCompanyId = useUserStore.getState().user?.currentCompanyId;
+
+          // passing current company_id as query param because safari not updating current_workspace cookines on workspace change
+          const url = currentCompanyId
+            ? `${internal_current_user_data_path()}?company_id=${currentCompanyId}`
+            : internal_current_user_data_path();
+
           const response = await request({
-            url: internal_current_user_data_path(),
+            url,
             method: "GET",
             accept: "json",
             assertOk: true,
